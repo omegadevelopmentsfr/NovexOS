@@ -45,7 +45,7 @@ grub-mkrescue # GRUB bootable image
 
 A Linux build environment is strongly recommended.
 
-### Build from Source
+### Build from Source (only on Linux for the moment)
 
 ```bash
 # 1. Clone the repository
@@ -59,7 +59,7 @@ make iso
 ```
 
 ```bash
-# 2.1. Build the .iso file and run it in QEMU (only on Linux for the moment)
+# 2.1. Build the .iso file and run it in QEMU
 make run
 ```
 
@@ -137,3 +137,4 @@ For commercial licensing or special permissions, contact: [omegadevelopmentsfr@g
 
 
 Made with dedication by [Omega Developments](https://github.com/omega-developments)
+
