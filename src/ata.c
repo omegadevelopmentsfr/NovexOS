@@ -204,7 +204,7 @@ void ata_write_sectors(uint32_t lba, uint8_t count, uint8_t *buffer) {
 
     uint16_t *buf16 = (uint16_t *)(buffer + (i * 512));
     for (int j = 0; j < 256; j++) {
-      outw(ATA_PRIMARY_IO, buf16[j]);
+      outw(buf16[j], ATA_PRIMARY_IO);
     }
     /* Cache flush après l'écriture */
     outb(ATA_PRIMARY_IO + 7, 0xE7);

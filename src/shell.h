@@ -11,6 +11,5 @@
 void shell_init(void);
 void shell_input(char c);
 int shell_is_editor_active(void);
-void cmd_install(void);
 
 #endif /* SHELL_H */

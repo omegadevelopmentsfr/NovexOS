@@ -257,7 +257,7 @@ static void cmd_rm(const char *args) {
   }
 }
 
-void cmd_install(void) {
+static void cmd_install(void) {
   terminal_set_color(0x0E); /* Yellow */
   terminal_writestring("--- OmegaOS Installer ---\n");
   terminal_set_color(0x07);

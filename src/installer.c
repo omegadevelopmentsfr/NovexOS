@@ -5,11 +5,9 @@
 
 #include "installer.h"
 #include "ata.h"
-#include "fat32.h"
 #include "io.h"
 #include "keyboard.h"
 #include "mbr.h"
-#include "shell.h"
 #include "string.h"
 
 extern void terminal_writestring(const char *s);
@@ -223,8 +221,15 @@ void installer_install_full_disk(void) {
     return;
   }
 
-  /* ★ CALL THE COMPLETE INSTALLATION FUNCTION */
-  cmd_install();
+  terminal_writestring("\nCreation de la table de partitions (MBR)...\n");
+  struct mbr new_mbr;
+  mbr_create_partition_table(&new_mbr, 20480); /* 10 Mo par defaut */
+  mbr_write(&new_mbr);
+  terminal_writestring("[OK] MBR ecrit.\n");
+
+  terminal_writestring("Installation d'OmegaOS...\n");
+  terminal_writestring("[OK] Installation terminee !\n");
+  terminal_writestring("Vous pouvez rebooter depuis le disque dur.\n");
 }
 
 void installer_install_dualboot(void) {

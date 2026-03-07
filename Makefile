@@ -152,10 +152,20 @@ $(ISO): $(KERNEL)
 	@echo "========================================="
 
 # ============================================================
+# make build — Compile le kernel et génère l'ISO
+# ============================================================
+build: $(ISO)
+	@echo ""
+	@echo "========================================="
+	@echo " Build terminé : $(ISO)"
+	@echo " Lancer avec   : make run"
+	@echo "========================================="
+
+# ============================================================
 # make clean — Supprime tout ce qui est généré
 # ============================================================
 clean:
 	@rm -rf $(OBJDIR) $(KERNEL) $(ISO) $(DISK_IMG) isodir
 	@echo "Nettoyage terminé."
 
-.PHONY: all clean run
+.PHONY: all build clean run

@@ -1,10 +1,7 @@
 /*
- * OmegaOS - fat32.c (CORRECTED)
+ * OmegaOS - fat32.c
  * FAT32 Driver Implementation (Minimal).
  * Supports reading files in Root Directory.
- *
- * FIX APPLIED: Moved sectors_per_cluster check to the beginning of
- * fat32_write_file()
  */
 
 #include "fat32.h"
@@ -230,14 +227,6 @@ int fat32_write_file(const char *filename, uint8_t *buffer, uint32_t len) {
   if (part_lba_start == 0)
     return -1;
 
-  /* ★ FIX: Check sectors_per_cluster IMMEDIATELY at the beginning */
-  /* Prevents division by zero at line 294 later */
-  if (fs_bpb.sectors_per_cluster == 0) {
-    terminal_writestring(
-        "ERROR: FAT32 not initialized (sectors_per_cluster=0)\n");
-    return -1;
-  }
-
   uint32_t root_sector =
       data_start_lba + ((fs_bpb.root_cluster - 2) * fs_bpb.sectors_per_cluster);
   uint8_t sector_buf[512];
@@ -297,10 +286,11 @@ found:
   ((uint32_t *)sector_buf)[next_free_cluster % 128] = 0x0FFFFFFF;
   ata_write_sectors(fat_sector, 1, sector_buf);
 
-  /* ★ FIX APPLIED: The check has been moved to the beginning of the function
-   * Previously at line 291-292, it was too late! The division at line 294
-   * could cause #DE exception (divide by zero) if fs_bpb was not properly
-   * initialized by fat32_mount_lba() after formatting. */
+  /* Guard critique : si sectors_per_cluster est 0 (fat32_init pas encore
+   * appelé après un format), la division ligne suivante crasherait en #DE */
+  if (fs_bpb.sectors_per_cluster == 0)
+    return -1;
+
   next_free_cluster += (sectors_to_write + fs_bpb.sectors_per_cluster - 1) /
                        fs_bpb.sectors_per_cluster;
 
