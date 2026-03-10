@@ -1,5 +1,5 @@
 /*
- * OmegaOS - linker.ld
+ * NovexOS - linker.ld
  * Linker script optimisé pour le boot physique (x86_64)
  */
 

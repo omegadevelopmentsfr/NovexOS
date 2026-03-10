@@ -51,8 +51,8 @@ DISK_IMG := disk.img
 all: $(KERNEL)
 	@echo ""
 	@echo "========================================="
-	@echo " NovexOS compilé : $(KERNEL)"
-	@echo " Lancer avec : make run"
+	@echo " NovexOS compiled : $(KERNEL)"
+	@echo " Launch with : make run"
 	@echo "========================================="
 
 # ============================================================
