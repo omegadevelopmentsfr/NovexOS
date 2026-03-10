@@ -64,16 +64,16 @@ $(KERNEL): $(OBJECTS)
 # ============================================================
 # Assemblage des fichiers .s du kernel (via gcc pour les #define)
 # ============================================================
-$(OBJDIR)/boot.o: $(SRCDIR)/boot.s | $(OBJDIR)
+$(OBJDIR)/boot.o: $(SRCDIR)/boot.s | $(OBJDIR)/.created
 	$(AS) $(ASFLAGS) $< -o $@
 
-$(OBJDIR)/interrupts.o: $(SRCDIR)/interrupts.s | $(OBJDIR)
+$(OBJDIR)/interrupts.o: $(SRCDIR)/interrupts.s | $(OBJDIR)/.created
 	$(AS) $(ASFLAGS) $< -o $@
 
 # ============================================================
 # Compilation des fichiers .c
 # ============================================================
-$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)/.created
 	$(CC) -c $< -o $@ $(CFLAGS)
 
 # ============================================================
@@ -83,7 +83,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 # 2. Linker en binaire plat démarrant à 0x0
 # 3. Convertir le .bin en .o (symboles _binary_..._start/end/size)
 # ============================================================
-$(OBJDIR)/loader.o: $(SRCDIR)/loader.s | $(OBJDIR)
+$(OBJDIR)/loader.o: $(SRCDIR)/loader.s | $(OBJDIR)/.created
 	as --32 $< -o $@
 
 $(OBJDIR)/loader.elf: $(OBJDIR)/loader.o
@@ -105,10 +105,12 @@ $(OBJDIR)/loader_bin.o: $(OBJDIR)/loader.bin
 		$< $@
 
 # ============================================================
-# Création du répertoire build
+# Création du répertoire build (sentinelle pour éviter le conflit
+# de noms avec la cible phony "build")
 # ============================================================
-$(OBJDIR):
+$(OBJDIR)/.created:
 	mkdir -p $(OBJDIR)
+	@touch $@
 
 # ============================================================
 # Création de l'image disque vide (10 Mo)
