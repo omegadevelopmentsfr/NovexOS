@@ -18,12 +18,12 @@ NovexOS is a fully independent desktop operating system developed entirely from 
 
 ### Core Philosophy
 
-| Principle | Description |
-|---|---|
-| **Built from scratch** | Custom kernel, bootloader, drivers — zero external OS base |
-| **Open to use** | Free to use and integrate, with mandatory attribution |
-| **Performance-first** | Lightweight architecture with no unnecessary overhead |
-| **Secure by design** | Memory safety and privilege separation baked in from day one |
+| Principle              | Description                                                  |
+| ---------------------- | ------------------------------------------------------------ |
+| **Built from scratch** | Custom kernel, bootloader, drivers — zero external OS base   |
+| **Open to use**        | Free to use and integrate, with mandatory attribution        |
+| **Performance-first**  | Lightweight architecture with no unnecessary overhead        |
+| **Secure by design**   | Memory safety and privilege separation baked in from day one |
 
 ---
 
@@ -33,17 +33,21 @@ NovexOS is a fully independent desktop operating system developed entirely from 
 
 ```bash
 # Required
-gcc / clang   # Cross-compiler for x86_64
-nasm          # Assembler
+gcc           # C compiler (system GCC or x86_64-elf-gcc cross-compiler)
+binutils      # Provides: as (assembler), ld (linker), objcopy
 make          # Build system
-qemu          # Emulator for testing
 
-# Recommended
-xorriso       # ISO creation
-grub-mkrescue # GRUB bootable image
+# Required for make run / make iso
+qemu-system-x86_64  # Emulator for testing
+grub-mkrescue       # GRUB bootable ISO creation
+xorriso             # ISO image backend (used by grub-mkrescue)
 ```
 
-A Linux build environment is strongly recommended.
+> **Cross-compiler (optional but recommended):** If `x86_64-elf-gcc` is available, the Makefile will use it automatically. Otherwise it falls back to the system `gcc`. Using a dedicated cross-compiler avoids potential host contamination.
+
+> **Note:** `nasm` is **not** required. All assembly files (`boot.s`, `interrupts.s`, `loader.s`) use GAS syntax and are assembled via `gcc` / `as`.
+
+A Linux build environment is required (macOS and Windows are not currently supported).
 
 ### Build from Source (only on Linux for the moment)
 
@@ -75,6 +79,7 @@ make clean
 ## Roadmap
 
 ### Done
+
 - [x] Stage 1 & Stage 2 Bootloader
 - [x] Kernel entry point (protected mode / long mode)
 - [x] Basic VGA text output driver
@@ -89,6 +94,7 @@ make clean
 - [ ] FAT32, NTFS, Ext4 support
 
 ### Planned
+
 - [ ] Process scheduler (round-robin)
 - [ ] NovexFS — custom filesystem
 - [ ] ELF binary loader
@@ -127,6 +133,7 @@ Areas where help is most needed: kernel & memory management, desktop environment
 NovexOS is licensed under the [Creative Commons Attribution-NoDerivatives 4.0 International (CC BY-ND 4.0)](./LICENSE).
 
 This means:
+
 - You are free to **use and redistribute** NovexOS.
 - You are **not allowed to modify** it or create derivative works.
 - Any use must clearly credit **Omega Developments** as the original author.
@@ -135,6 +142,4 @@ For commercial licensing or special permissions, contact: [omegadevelopmentsfr@g
 
 ---
 
-
 Made with dedication by [Omega Developments](https://github.com/omega-developments)
-
