@@ -1,5 +1,5 @@
 /*
- * OmegaOS - string.c
+ * NovexOS - string.c
  * Freestanding implementations of basic string/memory functions.
  */
 

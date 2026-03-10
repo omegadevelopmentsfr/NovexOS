@@ -1,5 +1,5 @@
 /*
- * OmegaOS - mbr.h
+ * NovexOS - mbr.h
  * Master Boot Record (MBR) parser.
  */
 

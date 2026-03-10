@@ -1,5 +1,5 @@
 /*
- * OmegaOS - gdt.c
+ * NovexOS - gdt.c
  * 64-bit GDT Implementation.
  */
 

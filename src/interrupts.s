@@ -1,5 +1,5 @@
 /*
- * OmegaOS - interrupts.s
+ * NovexOS - interrupts.s
  * 64-bit Interrupt Service Routine Stubs.
  */
 

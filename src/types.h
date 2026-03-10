@@ -1,5 +1,5 @@
 /*
- * OmegaOS - types.h
+ * NovexOS - types.h
  * Global type definitions and stdint replacement for x86_64 (64-bit).
  */
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - heap.h
+ * NovexOS - heap.h
  * Dynamic memory allocator — kmalloc / kfree.
  */
 

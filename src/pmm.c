@@ -1,5 +1,5 @@
 /*
- * OmegaOS - pmm.c
+ * NovexOS - pmm.c
  * Physical Memory Manager — bitmap-based page allocator.
  *
  * Uses a bitmap where each bit represents one 4KiB page.

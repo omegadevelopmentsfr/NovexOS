@@ -1,5 +1,5 @@
 /*
- * OmegaOS - editor.h
+ * NovexOS - editor.h
  * Text editor public API.
  */
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - shell.h
+ * NovexOS - shell.h
  * Shell public API.
  */
 

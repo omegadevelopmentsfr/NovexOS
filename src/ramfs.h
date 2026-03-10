@@ -1,5 +1,5 @@
 /*
- * OmegaOS - ramfs.h
+ * NovexOS - ramfs.h
  * Simple in-memory flat filesystem.
  */
 

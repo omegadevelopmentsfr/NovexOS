@@ -1,5 +1,5 @@
 /*
- * OmegaOS - fat32.h
+ * NovexOS - fat32.h
  * FAT32 Support.
  */
 

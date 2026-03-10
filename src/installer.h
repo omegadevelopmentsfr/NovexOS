@@ -1,5 +1,5 @@
 /*
- * OmegaOS - installer.h
+ * NovexOS - installer.h
  * Interactive installation wizard for disk/partition management
  */
 

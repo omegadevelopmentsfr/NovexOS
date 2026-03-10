@@ -1,5 +1,5 @@
 /*
- * OmegaOS - isr.c
+ * NovexOS - isr.c
  * 64-bit Interrupt Handling.
  */
 

@@ -155,7 +155,7 @@ disk_error:
 /* --- Data --- */
 msg_s2:      .asciz "\r\nOmegaStage2: "
 msg_loading: .asciz "loading"
-msg_jump:    .asciz " ok!\r\nJumping to OmegaOS Kernel...\r\n"
+msg_jump:    .asciz " ok!\r\nJumping to NovexOS Kernel...\r\n"
 msg_error:   .asciz " DISK ERROR!\r\n"
 
 .align 4

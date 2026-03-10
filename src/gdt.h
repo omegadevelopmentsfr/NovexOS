@@ -1,5 +1,5 @@
 /*
- * OmegaOS - gdt.h
+ * NovexOS - gdt.h
  * 64-bit Global Descriptor Table.
  */
 

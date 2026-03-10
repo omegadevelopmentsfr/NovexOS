@@ -1,5 +1,5 @@
 /*
- * OmegaOS - timer.h
+ * NovexOS - timer.h
  * Programmable Interval Timer (PIT) driver.
  */
 

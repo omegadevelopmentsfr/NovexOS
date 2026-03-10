@@ -1,5 +1,5 @@
 /*
- * OmegaOS - string.h
+ * NovexOS - string.h
  * Freestanding string utility functions (no libc).
  */
 

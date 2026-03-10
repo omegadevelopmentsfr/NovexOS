@@ -1,5 +1,5 @@
 /*
- * OmegaOS - shell.c
+ * NovexOS - shell.c
  * Command-line shell with built-in commands.
  * Supports RAMFS and FAT32 (Disk) via 'cd' and 'ls'.
  */
@@ -82,11 +82,11 @@ static void cmd_help(void) {
 }
 
 static void cmd_uname(void) {
-  terminal_writestring("OmegaOS v0.4 [x86_64] - FAT32 Support Enabled\n");
+  terminal_writestring("NovexOS v0.6 [x86_64] - FAT32 Support Enabled\n");
 }
 
 static void cmd_version(void) {
-  terminal_writestring("OmegaOS version 0.4.0\n");
+  terminal_writestring("NovexOS version 0.6.0\n");
   terminal_writestring(
       "Features: 64-bit Long Mode, ATA LBA48 (PIO), FAT32, MBR\n");
 }
@@ -259,7 +259,7 @@ static void cmd_rm(const char *args) {
 
 static void cmd_install(void) {
   terminal_set_color(0x0E); /* Yellow */
-  terminal_writestring("--- OmegaOS Installer ---\n");
+  terminal_writestring("--- NovexOS Installer ---\n");
   terminal_set_color(0x07);
 
   /* 1. Détection hardware du disque via IDENTIFY (fonctionne même si
@@ -321,7 +321,7 @@ static void cmd_install(void) {
   terminal_writestring("  [2/9] MBR written to disk\n");
 
   /* 3. Formatting */
-  terminal_writestring("Formatting OmegaOS partition (FAT32)...\n");
+  terminal_writestring("Formatting NovexOS partition (FAT32)...\n");
   fat32_format_partition(2048, 20480 - 2048);
   terminal_writestring("  [3/9] FAT32 format done\n");
 

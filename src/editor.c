@@ -1,5 +1,5 @@
 /*
- * OmegaOS - editor.c
+ * NovexOS - editor.c
  * Simple text editor — nano-like interface.
  * Supports Ctrl+S to save to RAM filesystem.
  */
@@ -19,8 +19,9 @@ extern uint8_t terminal_get_color(void);
 /* ------- Constants ------- */
 #define EDITOR_MAX_LINES 100
 #define EDITOR_MAX_COLS 79
-#define EDITOR_VIEW_LINES 22 /* Lines visible in edit area (25 - 3 for bars)   \
-                              */
+#define EDITOR_VIEW_LINES                                                      \
+  22 /* Lines visible in edit area (25 - 3 for bars)                           \
+      */
 
 /* ------- Editor state ------- */
 static char lines[EDITOR_MAX_LINES][EDITOR_MAX_COLS + 1];

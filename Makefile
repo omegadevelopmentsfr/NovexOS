@@ -1,5 +1,5 @@
 # ============================================================
-# OmegaOS - Makefile
+# NovexOS - Makefile
 # ============================================================
 
 # --- Toolchain ---
@@ -41,8 +41,8 @@ LOADER_OBJ := $(OBJDIR)/loader_bin.o
 OBJECTS  := $(ASM_OBJ) $(C_OBJ) $(LOADER_OBJ)
 
 # --- Fichiers de sortie ---
-KERNEL   := omegaos.bin
-ISO      := omegaos.iso
+KERNEL   := novexos.bin
+ISO      := novexos.iso
 DISK_IMG := disk.img
 
 # ============================================================
@@ -51,7 +51,7 @@ DISK_IMG := disk.img
 all: $(KERNEL)
 	@echo ""
 	@echo "========================================="
-	@echo " OmegaOS compilé : $(KERNEL)"
+	@echo " NovexOS compilé : $(KERNEL)"
 	@echo " Lancer avec : make run"
 	@echo "========================================="
 
@@ -122,7 +122,7 @@ $(DISK_IMG):
 # ============================================================
 run: $(ISO) $(DISK_IMG)
 	@echo ""
-	@echo ">>> Lancement de OmegaOS dans QEMU..."
+	@echo ">>> Lancement de NovexOS dans QEMU..."
 	@echo ">>> (Quitter : fermer la fenêtre ou Ctrl+C dans le terminal)"
 	@echo ""
 	qemu-system-x86_64 \
@@ -131,7 +131,7 @@ run: $(ISO) $(DISK_IMG)
 		-boot d \
 		-m 256M \
 		-vga std \
-		-name "OmegaOS"
+		-name "NovexOS"
 
 # ============================================================
 # Création de l'ISO bootable (nécessite grub-mkrescue + xorriso)
@@ -139,8 +139,8 @@ run: $(ISO) $(DISK_IMG)
 # ============================================================
 $(ISO): $(KERNEL)
 	@mkdir -p isodir/boot/grub
-	@cp $(KERNEL) isodir/boot/omegaos.bin
-	@printf 'set timeout=3\nset default=0\n\nmenuentry "OmegaOS" {\n    multiboot /boot/omegaos.bin\n    boot\n}\n' \
+	@cp $(KERNEL) isodir/boot/novexos.bin
+	@printf 'set timeout=3\nset default=0\n\nmenuentry "NovexOS" {\n    multiboot /boot/novexos.bin\n    boot\n}\n' \
 		> isodir/boot/grub/grub.cfg
 	grub-mkrescue -o $(ISO) isodir 2>/dev/null
 	@rm -rf isodir

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - fat32.c
+ * NovexOS - fat32.c
  * FAT32 Driver Implementation (Minimal).
  * Supports reading files in Root Directory.
  */

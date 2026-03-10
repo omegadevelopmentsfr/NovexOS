@@ -1,5 +1,5 @@
 /*
- * OmegaOS - keyboard.h
+ * NovexOS - keyboard.h
  * Keyboard driver interface.
  */
 

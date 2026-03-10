@@ -1,5 +1,5 @@
 /*
- * OmegaOS - installer.c
+ * NovexOS - installer.c
  * Interactive installation wizard
  */
 
@@ -162,7 +162,7 @@ int installer_detect_disks(void) {
 void installer_show_menu(void) {
   terminal_writestring("\n");
   terminal_writestring("╔════════════════════════════════╗\n");
-  terminal_writestring("║     OmegaOS Installation       ║\n");
+  terminal_writestring("║     NovexOS Installation       ║\n");
   terminal_writestring("╚════════════════════════════════╝\n");
   terminal_writestring("\n");
 
@@ -227,7 +227,7 @@ void installer_install_full_disk(void) {
   mbr_write(&new_mbr);
   terminal_writestring("[OK] MBR ecrit.\n");
 
-  terminal_writestring("Installation d'OmegaOS...\n");
+  terminal_writestring("Installation d'NovexOS...\n");
   terminal_writestring("[OK] Installation terminee !\n");
   terminal_writestring("Vous pouvez rebooter depuis le disque dur.\n");
 }
@@ -240,7 +240,7 @@ void installer_install_dualboot(void) {
 void installer_main(void) {
   terminal_writestring("\n");
   terminal_writestring("╔════════════════════════════════╗\n");
-  terminal_writestring("║     OmegaOS Live System        ║\n");
+  terminal_writestring("║     NovexOS Live System        ║\n");
   terminal_writestring("║   Running from RAM (USB key)   ║\n");
   terminal_writestring("╚════════════════════════════════╝\n");
   terminal_writestring(

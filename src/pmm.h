@@ -1,5 +1,5 @@
 /*
- * OmegaOS - pmm.h
+ * NovexOS - pmm.h
  * Physical Memory Manager — bitmap-based page allocator.
  */
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - isr.h
+ * NovexOS - isr.h
  * 64-bit Interrupt Service Routines.
  */
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - idt.h
+ * NovexOS - idt.h
  * 64-bit Interrupt Descriptor Table.
  */
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - timer.c
+ * NovexOS - timer.c
  * PIT (Programmable Interval Timer) driver — IRQ0.
  * Programs channel 0 in rate generator mode.
  */

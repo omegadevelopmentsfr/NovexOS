@@ -1,5 +1,5 @@
 /*
- * OmegaOS - idt.c
+ * NovexOS - idt.c
  * 64-bit IDT Implementation.
  */
 

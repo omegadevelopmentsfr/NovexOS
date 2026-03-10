@@ -1,5 +1,5 @@
 /*
- * OmegaOS - kernel.c
+ * NovexOS - kernel.c
  * Kernel entry point. VGA text-mode console driver.
  * Initializes all subsystems: GDT, IDT, ISR, PIT, PMM, heap, ramfs.
  *
@@ -181,7 +181,7 @@ static void show_layout_selection(void) {
   terminal_writestring(
       "   |                                                 |\n");
   terminal_writestring(
-      "   |              OmegaOS - First Boot               |\n");
+      "   |              NovexOS - First Boot               |\n");
   terminal_writestring(
       "   |                                                 |\n");
   terminal_writestring(
@@ -215,12 +215,12 @@ static void show_layout_selection(void) {
 /* ------- Banner ------- */
 static void show_banner(void) {
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-  terminal_writestring("   ___                              ___  ____\n");
-  terminal_writestring("  / _ \\ _ __ ___   ___  __ _  __  _/ _ \\/ ___|\n");
-  terminal_writestring(" | | | | '_ ` _ \\ / _ \\/ _` |/ _` | | | \\___ \\\n");
-  terminal_writestring(" | |_| | | | | | |  __/ (_| | (_| | |_| |___) |\n");
-  terminal_writestring("  \\___/|_| |_| |_|\\___|\\__, |\\__,_|\\___/|____/\n");
-  terminal_writestring("                       |___/\n");
+  terminal_writestring("  _   _                      ____   _____ \n");
+  terminal_writestring(" | \\ | |                    / __ \\ / ____|\n");
+  terminal_writestring(" |  \\| | _____   _______  _| |  | | (___  \n");
+  terminal_writestring(" | . ` |/ _ \\ \\ / / _ \\ \\/ / |  | |\\___ \\ \n");
+  terminal_writestring(" | |\\  | (_) \\ V /  __/>  <| |__| |____) |\n");
+  terminal_writestring(" |_| \\_|\\___/ \\_/ \\___/_/\\_\\\\____/|_____/\n");
 }
 
 /* ------- Callback: layout chosen ------- */
@@ -229,7 +229,7 @@ void keyboard_layout_chosen(int layout) {
   show_banner();
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("\n OmegaOS v0.6 - Bare Metal Monolithic Kernel "
+  terminal_writestring("\n NovexOS v0.6 - Bare Metal Monolithic Kernel "
                        "developped by Omega Developments\n");
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
@@ -257,7 +257,7 @@ void kernel_main(struct multiboot_info *mbi) {
   terminal_initialize();
 
   /* Print initial boot message */
-  terminal_writestring("=== OmegaOS Kernel Start ===\n");
+  terminal_writestring("=== NovexOS Kernel Start ===\n");
   terminal_writestring("Mode: 64-bit Long Mode\n");
   terminal_writestring("Memory: ");
   char buf[20];
@@ -321,7 +321,7 @@ void kernel_main(struct multiboot_info *mbi) {
 
   /* 11. Boot Complete - Start Interactive Shell */
   terminal_writestring("\n=== Boot Complete ===\n");
-  terminal_writestring("OmegaOS Ready (Running from RAM/USB)\n");
+  terminal_writestring("NovexOS Ready (Running from RAM/USB)\n");
   terminal_writestring(
       "Type 'help' for commands, 'install' to install to disk\n\n");
 

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - io.h
+ * NovexOS - io.h
  * Inline assembly wrappers for x86 I/O port access.
  * Zero external dependencies.
  */

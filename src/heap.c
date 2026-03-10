@@ -1,5 +1,5 @@
 /*
- * OmegaOS - heap.c
+ * NovexOS - heap.c
  * Simple linked-list first-fit heap allocator.
  *
  * The heap is a contiguous region obtained from the PMM.

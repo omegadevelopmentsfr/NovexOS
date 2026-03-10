@@ -1,5 +1,5 @@
 /*
- * OmegaOS - ata.c
+ * NovexOS - ata.c
  * ATA Driver - PIO Mode (Polling).
  */
 

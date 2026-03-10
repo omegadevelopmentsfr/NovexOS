@@ -1,5 +1,5 @@
 /*
- * OmegaOS - keyboard.c
+ * NovexOS - keyboard.c
  * PS/2 Keyboard driver — Scancode Set 1 → ASCII (QWERTY/AZERTY).
  * Supports Ctrl key modifier for editor save (Ctrl+S).
  */

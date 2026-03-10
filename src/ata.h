@@ -1,5 +1,5 @@
 /*
- * OmegaOS - ata.h
+ * NovexOS - ata.h
  * ATA (Advanced Technology Attachment) Driver.
  * Supports PIO (Programmed I/O) mode for reading/writing sectors.
  */

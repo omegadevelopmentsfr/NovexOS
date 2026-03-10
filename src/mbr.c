@@ -1,5 +1,5 @@
 /*
- * OmegaOS - mbr.c
+ * NovexOS - mbr.c
  * MBR Parser.
  * Scans the Master Boot Record to find a valid FAT16 partition.
  */

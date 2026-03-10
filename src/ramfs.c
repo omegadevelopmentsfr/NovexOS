@@ -1,5 +1,5 @@
 /*
- * OmegaOS - ramfs.c
+ * NovexOS - ramfs.c
  * Simple in-memory flat filesystem.
  * No directories — just a flat array of named files.
  */

@@ -1,5 +1,5 @@
 /*
- * OmegaOS - vfs.h
+ * NovexOS - vfs.h
  * Virtual Filesystem Layer - Abstraction for multiple filesystems.
  * Supports FAT32, NTFS (basic), ext4 (basic), and RAMFS fallback.
  */
@@ -21,8 +21,8 @@ typedef enum {
 /* VFS Operations Structure */
 typedef struct {
   const char *name;
-  int (*detect)(void);           /* Returns 1 if filesystem detected */
-  void (*init)(void);            /* Initialize filesystem */
+  int (*detect)(void); /* Returns 1 if filesystem detected */
+  void (*init)(void);  /* Initialize filesystem */
   int (*read_file)(const char *filename, uint8_t *buffer, uint32_t max_len);
   void (*list_dir)(const char *path);
 } vfs_operations_t;
