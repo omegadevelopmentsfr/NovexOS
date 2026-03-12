@@ -6,6 +6,7 @@
 
 #include "shell.h"
 #include "ata.h"
+#include "desktop.h"
 #include "editor.h"
 #include "fat32.h"
 #include "io.h"
@@ -16,6 +17,7 @@
 #include "string.h"
 #include "timer.h"
 #include "types.h"
+#include "vbe.h"
 
 /* ------- External terminal functions ------- */
 extern void terminal_putchar(char c);
@@ -77,16 +79,17 @@ static void cmd_help(void) {
   terminal_writestring("  rm <file>     - Delete file\n");
   terminal_writestring("  install       - Format disk (FAT32)\n");
   terminal_writestring("  edit <file>   - Open text editor\n");
+  terminal_writestring("  startde       - Launch NovexDE desktop\n");
   terminal_writestring("  shutdown      - Power off\n");
   terminal_writestring("  reboot        - Reboot\n");
 }
 
 static void cmd_uname(void) {
-  terminal_writestring("NovexOS v0.6 [x86_64] - FAT32 Support Enabled\n");
+  terminal_writestring("NovexOS v0.7 [x86_64] - FAT32 Support Enabled\n");
 }
 
 static void cmd_version(void) {
-  terminal_writestring("NovexOS version 0.6.0\n");
+  terminal_writestring("NovexOS version 0.7.0\n");
   terminal_writestring(
       "Features: 64-bit Long Mode, ATA LBA48 (PIO), FAT32, MBR\n");
 }
@@ -516,7 +519,10 @@ static void shell_execute(const char *cmd) {
     cmd_edit(c + 5);
   else if (strcmp(c, "edit") == 0)
     cmd_edit("");
-  else {
+  else if (strcmp(c, "startde") == 0) {
+    vbe_init(NULL); /* Switch from VGA text to VBE Graphic */
+    desktop_init();
+  } else {
     terminal_writestring("Unknown command: ");
     terminal_writestring(c);
     terminal_writestring("\n");

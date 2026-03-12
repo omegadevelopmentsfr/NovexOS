@@ -5,6 +5,7 @@
  */
 
 #include "keyboard.h"
+#include "desktop.h"
 #include "io.h"
 #include "isr.h"
 #include "shell.h"
@@ -47,15 +48,12 @@ static const char scancode_azerty_shift[128] = {
 
 static const char *active_layout = scancode_qwerty;
 static const char *active_layout_shift = scancode_qwerty_shift;
-static int layout_selected = 0;
 static int ctrl_held = 0;
 static int shift_held = 0;
 
 /* getchar state */
 static volatile char getchar_buffer = 0;
 static volatile bool getchar_waiting = false;
-
-extern void keyboard_layout_chosen(int layout);
 
 char keyboard_getchar(void) {
   getchar_waiting = true;
@@ -77,10 +75,7 @@ void keyboard_set_layout(int layout) {
     active_layout = scancode_qwerty;
     active_layout_shift = scancode_qwerty_shift;
   }
-  layout_selected = 1;
 }
-
-int keyboard_is_layout_selected(void) { return layout_selected; }
 
 int keyboard_get_layout(void) {
   return (active_layout == scancode_azerty) ? 1 : 0;
@@ -114,18 +109,6 @@ void keyboard_handler(void) {
     return;
   }
 
-  /* Layout selection mode */
-  if (!layout_selected) {
-    if (scancode == 0x02) {
-      keyboard_set_layout(0);
-      keyboard_layout_chosen(0);
-    } else if (scancode == 0x03) {
-      keyboard_set_layout(1);
-      keyboard_layout_chosen(1);
-    }
-    return;
-  }
-
   /* ESC key */
   if (scancode == 0x01) {
     shell_input(27);
@@ -146,6 +129,8 @@ void keyboard_handler(void) {
   if (c != 0) {
     if (getchar_waiting) {
       getchar_buffer = c;
+    } else if (desktop_is_active()) {
+      desktop_handle_key(c);
     } else {
       shell_input(c);
     }

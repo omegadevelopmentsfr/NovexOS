@@ -113,10 +113,10 @@ $(OBJDIR)/.created:
 	@touch $@
 
 # ============================================================
-# Création de l'image disque vide (10 Mo)
+# Création de l'image disque vide (200 Mo)
 # ============================================================
 $(DISK_IMG):
-	dd if=/dev/zero of=$@ bs=1M count=10
+	dd if=/dev/zero of=$@ bs=1M count=200
 
 # ============================================================
 # make run — Compile, génère l'ISO et lance QEMU
@@ -131,8 +131,9 @@ run: $(ISO) $(DISK_IMG)
 		-drive file=$(ISO),format=raw,index=1,media=cdrom \
 		-drive file=$(DISK_IMG),format=raw,index=0,media=disk \
 		-boot d \
-		-m 256M \
-		-vga std \
+		-m 512M \
+		-device VGA,vgamem_mb=16 \
+		-serial stdio \
 		-name "NovexOS"
 
 # ============================================================

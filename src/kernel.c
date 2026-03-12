@@ -7,6 +7,7 @@
  */
 
 #include "ata.h"
+#include "desktop.h"
 #include "fat32.h"
 #include "gdt.h"
 #include "heap.h"
@@ -14,6 +15,8 @@
 #include "io.h"
 #include "isr.h"
 #include "keyboard.h"
+#include "lang.h"
+#include "mouse.h"
 #include "pmm.h"
 #include "ramfs.h"
 #include "shell.h"
@@ -21,6 +24,8 @@
 #include "timer.h"
 #include "types.h"
 #include "vfs.h"
+
+int chosen_res_id = 3;
 
 /* ------- VGA constants ------- */
 #define VGA_WIDTH 80
@@ -102,6 +107,11 @@ static void terminal_scroll(void) {
 
 /* ------- Public: write one character ------- */
 void terminal_putchar(char c) {
+  if (desktop_is_active()) {
+    desktop_terminal_putchar(c);
+    return;
+  }
+
   if (c == '\n') {
     terminal_column = 0;
     if (++terminal_row == VGA_HEIGHT) {
@@ -139,6 +149,10 @@ void terminal_putchar(char c) {
 
 /* ------- Public: backspace ------- */
 void terminal_backspace(void) {
+  if (desktop_is_active()) {
+    desktop_terminal_putchar('\b');
+    return;
+  }
   if (terminal_column > 0) {
     terminal_column--;
     terminal_buffer[terminal_row * VGA_WIDTH + terminal_column] =
@@ -172,47 +186,7 @@ void terminal_clear(void) {
 void terminal_set_color(uint8_t color) { terminal_color = color; }
 uint8_t terminal_get_color(void) { return terminal_color; }
 
-/* ------- Layout selection screen ------- */
-static void show_layout_selection(void) {
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-  terminal_writestring("\n\n\n");
-  terminal_writestring(
-      "   ===================================================\n");
-  terminal_writestring(
-      "   |                                                 |\n");
-  terminal_writestring(
-      "   |              NovexOS - First Boot               |\n");
-  terminal_writestring(
-      "   |                                                 |\n");
-  terminal_writestring(
-      "   |         Select your keyboard layout:            |\n");
-  terminal_writestring(
-      "   |                                                 |\n");
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-  terminal_writestring("   |           ");
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("[1]");
-  terminal_set_color(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-  terminal_writestring("  QWERTY  (US/International)       |\n");
-
-  terminal_writestring("   |           ");
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("[2]");
-  terminal_set_color(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-  terminal_writestring("  AZERTY  (French)                 |\n");
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-  terminal_writestring(
-      "   |                                                 |\n");
-  terminal_writestring(
-      "   ===================================================\n\n");
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_DARK_GREY, VGA_COLOR_BLACK));
-  terminal_writestring("                  Press 1 or 2 to continue...\n");
-}
-
-/* ------- Banner ------- */
+/* ------- Interactive Boot Sequence ------- */
 static void show_banner(void) {
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
   terminal_writestring("  _   _                      ____   _____ \n");
@@ -223,28 +197,85 @@ static void show_banner(void) {
   terminal_writestring(" |_| \\_|\\___/ \\_/ \\___/_/\\_\\\\____/|_____/\n");
 }
 
-/* ------- Callback: layout chosen ------- */
-void keyboard_layout_chosen(int layout) {
+static void interactive_boot_sequence(void) {
+  terminal_clear();
+  terminal_set_color(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+  terminal_writestring("=== NovexOS First Boot ===\n\n");
+
+  /* 1. Language Selection */
+  terminal_writestring("Select Language / Choisissez la langue:\n");
+  terminal_writestring("[1] English\n");
+  terminal_writestring("[2] Francais\n");
+  terminal_writestring("\n> ");
+
+  char c;
+  while (1) {
+    c = keyboard_getchar();
+    if (c == '1' || c == '&') {
+      lang_set(LANG_EN);
+      break;
+    }
+    if (c == '2' || c == 'e') {
+      lang_set(LANG_FR);
+      break;
+    }
+  }
+
+  /* 2. Keyboard Layout */
+  terminal_clear();
+  terminal_writestring(get_string(STR_SELECT_KB));
+  while (1) {
+    c = keyboard_getchar();
+    if (c == '1' || c == '&') {
+      keyboard_set_layout(0);
+      break;
+    }
+    if (c == '2' || c == 'e') {
+      keyboard_set_layout(1);
+      break;
+    }
+  }
+
+  /* 3. Screen Resolution */
+  terminal_clear();
+  terminal_writestring(get_string(STR_SELECT_RES));
+  while (1) {
+    c = keyboard_getchar();
+    if (c == '1' || c == '&') {
+      chosen_res_id = 1;
+      break;
+    }
+    if (c == '2' || c == 'e') {
+      chosen_res_id = 2;
+      break;
+    }
+    if (c == '3' || c == '"') {
+      chosen_res_id = 3;
+      break;
+    }
+  }
+
   terminal_clear();
   show_banner();
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("\n NovexOS v0.6 - Bare Metal Monolithic Kernel "
-                       "developped by Omega Developments\n");
+  terminal_writestring("\n NovexOS v0.7 - Bare Metal Monolithic Kernel\n");
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-  terminal_writestring(" Keyboard: ");
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_BROWN, VGA_COLOR_BLACK));
-  terminal_writestring(layout == 1 ? "AZERTY" : "QWERTY");
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-  terminal_writestring("  |  GDT: OK  |  IDT: OK  |  PIT: OK\n");
-  terminal_writestring(" PMM: OK  |  Heap: OK  |  RamFS: OK\n");
-  terminal_writestring(" Type 'help' to see available commands.\n");
-  terminal_writestring("------------------------------------------\n\n");
+  terminal_writestring(get_string(STR_BOOT_COMPLETE));
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
   shell_init();
+
+  /* Lancement automatique du DE */
+  shell_input('s');
+  shell_input('t');
+  shell_input('a');
+  shell_input('r');
+  shell_input('t');
+  shell_input('d');
+  shell_input('e');
+  shell_input('\n');
 }
 
 /* ------- Kernel entry point ------- */
@@ -279,10 +310,10 @@ void kernel_main(struct multiboot_info *mbi) {
   isr_init();
   terminal_writestring("ISRs OK\n");
 
-  /* 4. PIT timer at 100 Hz */
-  terminal_writestring("Initializing Timer...\n");
-  timer_init(100);
-  terminal_writestring("Timer OK\n");
+  /* 4. PIT timer at 1000 Hz for 60fps rendering */
+  terminal_writestring("Initializing Timer (1000Hz)...\n");
+  timer_init(1000);
+  terminal_writestring(get_string(STR_TIMER_OK));
 
   /* 5. Physical memory manager */
   terminal_writestring("Initializing PMM...\n");
@@ -312,28 +343,29 @@ void kernel_main(struct multiboot_info *mbi) {
   /* 9b. Keyboard Init */
   terminal_writestring("Initializing Keyboard...\n");
   keyboard_init();
-  terminal_writestring("Keyboard OK\n");
+  terminal_writestring(get_string(STR_KEYBOARD_OK));
+
+  /* 9c. Mouse Init */
+  terminal_writestring("Initializing Mouse...\n");
+  mouse_init();
+  terminal_writestring(get_string(STR_MOUSE_OK));
 
   /* 10. Enable interrupts */
   terminal_writestring("Enabling interrupts...\n");
   __asm__ volatile("sti");
   terminal_writestring("Interrupts enabled!\n");
 
-  /* 11. Boot Complete - Start Interactive Shell */
-  terminal_writestring("\n=== Boot Complete ===\n");
-  terminal_writestring("NovexOS Ready (Running from RAM/USB)\n");
-  terminal_writestring(
-      "Type 'help' for commands, 'install' to install to disk\n\n");
-
-  /* Clear boot logs and show keyboard layout selection on a fresh screen */
-  terminal_clear();
-  show_layout_selection();
-
-  /* shell_init() is called inside keyboard_layout_chosen() once the user
-     picks a layout — do NOT call it here or the prompt appears immediately */
+  /* 11. Boot Complete - Start Interactive Boot Flow */
+  interactive_boot_sequence();
 
   /* Halt loop - shell runs via keyboard interrupt handler */
   for (;;) {
+    if (desktop_is_active()) {
+      desktop_run();
+      /* Once desktop exits, re-clear the screen to text mode */
+      terminal_clear();
+      interactive_boot_sequence();
+    }
     __asm__ volatile("hlt");
   }
 }

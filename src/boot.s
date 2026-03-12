@@ -1,11 +1,12 @@
 # ============================================================
 # NovexOS - boot.s
 # Transition vers le mode 64 bits (Long Mode)
+# VBE graphics switched on-demand via BGA (Bochs VBE Extensions)
 # ============================================================
 
 /* ---- Constantes Multiboot 1 ---- */
 #define MULTIBOOT_MAGIC    0x1BADB002
-#define MULTIBOOT_FLAGS    0x00000003 /* ALIGN + MEMINFO (pas de AOUT_KLUDGE pour ELF64) */
+#define MULTIBOOT_FLAGS    0x00000003 /* ALIGN + MEMINFO */
 #define MULTIBOOT_CHECKSUM -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
 
 .section .multiboot, "aw"
@@ -18,10 +19,20 @@ multiboot_header:
 /* ---- Sections de données pour le boot ---- */
 .section .bss
 .align 4096
+.global pml4_table
+.global pdpt_table
 pml4_table: .skip 4096
 pdpt_table: .skip 4096
 pd_table:   .skip 4096
-pt_table:   .skip 4096
+/* Page tables for 16MB identity mapping (8 × 4KB page tables) */
+pt_table0: .skip 4096
+pt_table1: .skip 4096
+pt_table2: .skip 4096
+pt_table3: .skip 4096
+pt_table4: .skip 4096
+pt_table5: .skip 4096
+pt_table6: .skip 4096
+pt_table7: .skip 4096
 
 .align 16
 stack_bottom:
@@ -64,7 +75,7 @@ _start:
     # TRACE '2' : BSS nettoyé
     movw $0x0F32, (0xB8002)
 
-    # 3. Configuration de la pagination (Identity Map 2Mo)
+    # 3. Configuration de la pagination (Identity Map 16Mo)
     # PML4[0] -> PDPT
     mov $pdpt_table, %eax
     or $0x3, %eax
@@ -75,15 +86,45 @@ _start:
     or $0x3, %eax
     mov %eax, (pdpt_table)
 
-    # PD[0] -> PT
-    mov $pt_table, %eax
-    or $0x3, %eax
-    mov %eax, (pd_table)
+    # PD[0] -> PT0, PD[1] -> PT1, ..., PD[7] -> PT7
+    # Each PD entry covers 2MB, so 8 entries = 16MB
 
-    # Remplissage de la PT (Map 512 pages de 4Ko = 2Mo)
-    mov $pt_table, %edi
-    mov $0x03, %eax # Present + Writable
-    mov $512, %ecx
+    mov $pt_table0, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 0)
+
+    mov $pt_table1, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 8)
+
+    mov $pt_table2, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 16)
+
+    mov $pt_table3, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 24)
+
+    mov $pt_table4, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 32)
+
+    mov $pt_table5, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 40)
+
+    mov $pt_table6, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 48)
+
+    mov $pt_table7, %eax
+    or $0x3, %eax
+    mov %eax, (pd_table + 56)
+
+    # Remplissage des 8 PT (Map 8×512 pages de 4Ko = 16Mo)
+    mov $pt_table0, %edi
+    mov $0x03, %eax            # Present + Writable
+    mov $(512 * 8), %ecx       # 4096 entries total (16MB)
 .loop_pt:
     mov %eax, (%edi)
     add $4096, %eax

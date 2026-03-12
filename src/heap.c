@@ -18,7 +18,7 @@ struct heap_block {
 };
 
 #define HEADER_SIZE sizeof(struct heap_block)
-#define HEAP_PAGES 16 /* 64 KiB initial heap */
+#define HEAP_PAGES 256 /* 1 MiB heap (for NovexDE GUI) */
 
 static struct heap_block *heap_start = NULL;
 static uint32_t heap_total_size = 0;
