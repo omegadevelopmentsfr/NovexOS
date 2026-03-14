@@ -85,11 +85,11 @@ static void cmd_help(void) {
 }
 
 static void cmd_uname(void) {
-  terminal_writestring("NovexOS v0.7 [x86_64] - FAT32 Support Enabled\n");
+  terminal_writestring("NovexOS v0.7.1 [x86_64] - FAT32 Support Enabled\n");
 }
 
 static void cmd_version(void) {
-  terminal_writestring("NovexOS version 0.7.0\n");
+  terminal_writestring("NovexOS version 0.7.1\n");
   terminal_writestring(
       "Features: 64-bit Long Mode, ATA LBA48 (PIO), FAT32, MBR\n");
 }

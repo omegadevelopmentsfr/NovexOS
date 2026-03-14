@@ -259,7 +259,7 @@ static void interactive_boot_sequence(void) {
   show_banner();
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("\n NovexOS v0.7 - Bare Metal Monolithic Kernel\n");
+  terminal_writestring("\n NovexOS v0.7.1 - Bare Metal Monolithic Kernel\n");
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
   terminal_writestring(get_string(STR_BOOT_COMPLETE));
