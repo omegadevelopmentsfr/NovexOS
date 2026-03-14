@@ -1,6 +1,6 @@
 ﻿# NovexOS
 
-![Version](https://img.shields.io/badge/version-0.7.1.1.1.1--alpha-6C63FF)
+![Version](https://img.shields.io/badge/version-0.7.1--alpha-6C63FF)
 ![Kernel](https://img.shields.io/badge/kernel-custom%20built-informational)
 ![License](https://img.shields.io/badge/license-CC%20BY--ND%204.0-red)
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
