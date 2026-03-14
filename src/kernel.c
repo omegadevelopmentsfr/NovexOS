@@ -267,7 +267,7 @@ static void interactive_boot_sequence(void) {
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
   shell_init();
 
-  /* Lancement automatique du DE */
+  /* Automatically launch the desktop environment */
   shell_input('s');
   shell_input('t');
   shell_input('a');

@@ -19,4 +19,11 @@ int memcmp(const void *s1, const void *s2, size_t n);
 char *strchr(const char *s, int c);
 void int_to_str(uint32_t n, char *buf);
 
+/*
+ * memset32 — fill count uint32_t slots with val.
+ * Faster than memset for pixel/color fills: two 32-bit values are packed
+ * into each 64-bit store, halving the number of write instructions.
+ */
+void memset32(uint32_t *dst, uint32_t val, size_t count);
+
 #endif /* STRING_H */

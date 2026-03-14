@@ -18,11 +18,11 @@ extern uint8_t terminal_get_color(void);
 /* Disk detection state */
 static struct {
   int disk_found;
-  int is_unformatted; /* 1 = disque vide/non formaté, 0 = MBR valide */
+  int is_unformatted; /* 1 = empty/unformatted disk, 0 = valid MBR */
   uint32_t disk_sectors;
 } disk_state = {0, 0, 0};
 
-/* Affiche un octet en hex */
+/* Print a byte as hex */
 static void print_hex_byte(uint8_t b) {
   const char *hex = "0123456789ABCDEF";
   char buf[3];
@@ -33,13 +33,13 @@ static void print_hex_byte(uint8_t b) {
 }
 
 /* -----------------------------------------------------------------------
- * Détection du disque : purement hardware via IDENTIFY.
- * Fonctionne que le disque soit vide, non formaté, FAT32, NTFS, ext4…
- * Vérifie ensuite si le MBR est valide pour informer l'utilisateur.
+ * Disk detection: purely hardware via IDENTIFY.
+ * Works whether the disk is empty, unformatted, FAT32, NTFS, ext4...
+ * Then checks whether the MBR is valid to inform the user.
  * ----------------------------------------------------------------------- */
-/* Dump brut des registres ATA pour diagnostic */
+/* Raw dump of ATA registers for diagnostics */
 static void ata_dump_registers(void) {
-  /* Sélectionner Master avant de lire */
+  /* Select Master before reading */
   outb(0x1F6, 0xA0);
   /* 400ns delay */
   inb(0x3F6);
@@ -68,18 +68,18 @@ static void ata_dump_registers(void) {
 }
 
 int installer_detect_disks(void) {
-  terminal_writestring("\n=== Detection du disque dur ===\n");
+  terminal_writestring("\n=== Hard Disk Detection ===\n");
 
-  terminal_writestring("--- Registres ATA AVANT IDENTIFY ---\n");
+  terminal_writestring("--- ATA Registers BEFORE IDENTIFY ---\n");
   ata_dump_registers();
 
-  terminal_writestring("Envoi commande IDENTIFY (0xEC)...\n");
-  /* Reset doux */
+  terminal_writestring("Sending IDENTIFY command (0xEC)...\n");
+  /* Soft reset */
   outb(0x3F6, 0x04);
   inb(0x3F6);
   inb(0x3F6);
   outb(0x3F6, 0x00);
-  /* Attente BSY */
+  /* Wait for BSY */
   uint32_t t = 0;
   while ((inb(0x1F7) & 0x80) && t < 500000)
     t++;
@@ -87,7 +87,7 @@ int installer_detect_disks(void) {
   print_hex_byte(inb(0x1F7));
   terminal_writestring("\n");
 
-  /* Sélection Master + envoi IDENTIFY */
+  /* Select Master and send IDENTIFY */
   outb(0x1F6, 0xA0);
   inb(0x3F6);
   inb(0x3F6);
@@ -104,15 +104,15 @@ int installer_detect_disks(void) {
   inb(0x3F6);
 
   uint8_t status = inb(0x1F7);
-  terminal_writestring("  Status apres IDENTIFY: 0x");
+  terminal_writestring("  Status after IDENTIFY: 0x");
   print_hex_byte(status);
   terminal_writestring("\n");
 
-  /* Attendre BSY=0 */
+  /* Wait for BSY=0 */
   t = 0;
   while ((inb(0x1F7) & 0x80) && t < 500000)
     t++;
-  terminal_writestring("  Status apres attente : 0x");
+  terminal_writestring("  Status after wait   : 0x");
   print_hex_byte(inb(0x1F7));
   terminal_writestring("\n");
   terminal_writestring("  CylLo / CylHi       : 0x");
@@ -121,38 +121,38 @@ int installer_detect_disks(void) {
   print_hex_byte(inb(0x1F5));
   terminal_writestring("\n");
 
-  terminal_writestring("--- Appel ata_identify() ---\n");
+  terminal_writestring("--- Calling ata_identify() ---\n");
   int result = ata_identify(0);
 
   if (!result) {
-    terminal_writestring("[ECHEC] ata_identify() retourne 0\n");
+    terminal_writestring("[FAIL] ata_identify() returned 0\n");
     disk_state.disk_found = 0;
     disk_state.is_unformatted = 0;
     return 0;
   }
 
-  terminal_writestring("[OK] Disque ATA detecte sur Primary Master.\n");
+  terminal_writestring("[OK] ATA drive detected on Primary Master.\n");
   disk_state.disk_found = 1;
 
-  /* Niveau 2 : lire le secteur 0 (MBR) pour voir si le disque est formaté */
-  terminal_writestring("Lecture du MBR (secteur 0)...\n");
+  /* Level 2: read sector 0 (MBR) to check if the disk is formatted */
+  terminal_writestring("Reading MBR (sector 0)...\n");
   uint8_t mbr_buf[512];
   ata_read_sectors(0, 1, mbr_buf);
 
   uint8_t sig_lo = mbr_buf[510];
   uint8_t sig_hi = mbr_buf[511];
-  terminal_writestring("  Signature MBR : 0x");
+  terminal_writestring("  MBR Signature : 0x");
   print_hex_byte(sig_hi);
   print_hex_byte(sig_lo);
   terminal_writestring("\n");
 
   if (sig_lo == 0x55 && sig_hi == 0xAA) {
-    terminal_writestring("[OK] MBR valide (0xAA55) - disque partitionne.\n");
+    terminal_writestring("[OK] Valid MBR (0xAA55) - disk is partitioned.\n");
     disk_state.is_unformatted = 0;
   } else {
-    terminal_writestring("[INFO] Pas de signature MBR valide - ");
-    terminal_writestring("disque vide ou non formate.\n");
-    terminal_writestring("  (C'est normal pour un nouveau disque)\n");
+    terminal_writestring("[INFO] No valid MBR signature - ");
+    terminal_writestring("empty or unformatted disk.\n");
+    terminal_writestring("  (This is normal for a new disk)\n");
     disk_state.is_unformatted = 1;
   }
 
@@ -167,38 +167,38 @@ void installer_show_menu(void) {
   terminal_writestring("\n");
 
   if (!disk_state.disk_found) {
-    terminal_writestring("Aucun disque dur detecte.\n\n");
+    terminal_writestring("No hard disk detected.\n\n");
     terminal_writestring("Options:\n");
-    terminal_writestring("  [1] Continuer sans disque (RAM)\n");
-    terminal_writestring("  [2] Re-detecter le disque\n");
+    terminal_writestring("  [1] Continue without disk (RAM)\n");
+    terminal_writestring("  [2] Re-detect disk\n");
     terminal_writestring("  [3] Reboot\n");
   } else {
     if (disk_state.is_unformatted) {
-      terminal_writestring("Disque detecte : VIDE / NON FORMATE\n");
+      terminal_writestring("Disk detected : EMPTY / UNFORMATTED\n");
       terminal_writestring(
-          "L'installation creera un MBR et une partition FAT32.\n\n");
+          "Installation will create an MBR and a FAT32 partition.\n\n");
     } else {
       terminal_writestring(
-          "Disque detecte : MBR valide (deja partitionne)\n\n");
+          "Disk detected : valid MBR (already partitioned)\n\n");
     }
-    terminal_writestring("Options d'installation :\n");
-    terminal_writestring("  [1] Installer (formate le disque entier)\n");
-    terminal_writestring("  [2] Installation dual-boot\n");
-    terminal_writestring("  [3] Re-detecter le disque\n");
-    terminal_writestring("  [4] Retour au shell\n");
+    terminal_writestring("Installation options:\n");
+    terminal_writestring("  [1] Install (format the entire disk)\n");
+    terminal_writestring("  [2] Dual-boot installation\n");
+    terminal_writestring("  [3] Re-detect disk\n");
+    terminal_writestring("  [4] Back to shell\n");
     terminal_writestring("  [5] Reboot\n");
   }
 
-  terminal_writestring("\nChoix : ");
+  terminal_writestring("\nChoice: ");
 }
 
 void installer_install_full_disk(void) {
   terminal_writestring("\n");
   terminal_writestring("╔════════════════════════════════╗\n");
-  terminal_writestring("║ ATTENTION : Formatage complet  ║\n");
+  terminal_writestring("║ WARNING  : Full format         ║\n");
   terminal_writestring("╚════════════════════════════════╝\n");
-  terminal_writestring("\nTOUTES les donnees seront effacees !\n");
-  terminal_writestring("Confirmer ? (tapez 'yes') : ");
+  terminal_writestring("\nALL data will be erased!\n");
+  terminal_writestring("Confirm? (type 'yes'): ");
 
   char buffer[10];
   int pos = 0;
@@ -217,24 +217,24 @@ void installer_install_full_disk(void) {
   terminal_writestring("\n");
 
   if (strcmp(buffer, "yes") != 0) {
-    terminal_writestring("Installation annulee.\n");
+    terminal_writestring("Installation cancelled.\n");
     return;
   }
 
-  terminal_writestring("\nCreation de la table de partitions (MBR)...\n");
+  terminal_writestring("\nCreating partition table (MBR)...\n");
   struct mbr new_mbr;
-  mbr_create_partition_table(&new_mbr, 20480); /* 10 Mo par defaut */
+  mbr_create_partition_table(&new_mbr, 20480); /* 10 MB default */
   mbr_write(&new_mbr);
-  terminal_writestring("[OK] MBR ecrit.\n");
+  terminal_writestring("[OK] MBR written.\n");
 
-  terminal_writestring("Installation d'NovexOS...\n");
-  terminal_writestring("[OK] Installation terminee !\n");
-  terminal_writestring("Vous pouvez rebooter depuis le disque dur.\n");
+  terminal_writestring("Installing NovexOS...\n");
+  terminal_writestring("[OK] Installation complete!\n");
+  terminal_writestring("You can now reboot from the hard disk.\n");
 }
 
 void installer_install_dualboot(void) {
-  terminal_writestring("\nDual-boot non encore implemente.\n");
-  terminal_writestring("Utilisez l'installation complete pour l'instant.\n");
+  terminal_writestring("\nDual-boot not yet implemented.\n");
+  terminal_writestring("Use the full installation for now.\n");
 }
 
 void installer_main(void) {
@@ -244,11 +244,11 @@ void installer_main(void) {
   terminal_writestring("║   Running from RAM (USB key)   ║\n");
   terminal_writestring("╚════════════════════════════════╝\n");
   terminal_writestring(
-      "\nAppuyez sur 'I' pour l'installeur, autre touche pour le shell.\n");
+      "\nPress 'I' for the installer, any other key for the shell.\n");
 
   int key = keyboard_getchar();
   if (key != 'I' && key != 'i') {
-    terminal_writestring("\nRetour au shell...\n");
+    terminal_writestring("\nBack to shell...\n");
     return;
   }
 
@@ -263,16 +263,16 @@ void installer_main(void) {
     if (!disk_detected) {
       switch (choice) {
       case '1':
-        terminal_writestring("Mode RAM...\n");
+        terminal_writestring("RAM mode...\n");
         return;
       case '2':
         continue;
       case '3':
-        terminal_writestring("Reboot...\n");
+        terminal_writestring("Rebooting...\n");
         __asm__ volatile("hlt");
         break;
       default:
-        terminal_writestring("Option invalide.\n");
+        terminal_writestring("Invalid option.\n");
         break;
       }
     } else {
@@ -286,14 +286,14 @@ void installer_main(void) {
       case '3':
         continue;
       case '4':
-        terminal_writestring("Retour au shell...\n");
+        terminal_writestring("Back to shell...\n");
         return;
       case '5':
-        terminal_writestring("Reboot...\n");
+        terminal_writestring("Rebooting...\n");
         __asm__ volatile("hlt");
         break;
       default:
-        terminal_writestring("Option invalide.\n");
+        terminal_writestring("Invalid option.\n");
         break;
       }
     }

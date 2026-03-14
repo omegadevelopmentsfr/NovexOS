@@ -265,10 +265,10 @@ static void cmd_install(void) {
   terminal_writestring("--- NovexOS Installer ---\n");
   terminal_set_color(0x07);
 
-  /* 1. Détection hardware du disque via IDENTIFY (fonctionne même si
-   *    le disque est vide/non formaté/tout à zéro).
-   *    NE PAS utiliser un "all-zero check" : disk.img est créé avec
-   *    dd if=/dev/zero donc sera toujours à zéro avant installation. */
+  /* 1. Hardware disk detection via IDENTIFY (works even if
+   *    the disk is empty/unformatted/all zeroes).
+   *    Do NOT use an all-zero check: disk.img is created with
+   *    dd if=/dev/zero and will always be zero before installation. */
   terminal_writestring("Detecting disk...\n");
   if (!ata_identify(0)) {
     terminal_set_color(0x0C);
@@ -279,7 +279,7 @@ static void cmd_install(void) {
   }
   terminal_writestring("Hard disk detected.\n");
 
-  /* Lire le MBR pour les infos de partition (le disque peut être vide) */
+  /* Read the MBR for partition info (disk may be empty) */
   uint8_t mbr_buf[512];
   ata_read_sectors(0, 1, mbr_buf);
 
@@ -370,7 +370,7 @@ static void cmd_install(void) {
   terminal_writestring(" bytes\n");
 
   terminal_writestring("  [6/9] Writing KERNEL.SYS...\n");
-  /* Limiter à 255 secteurs (127KB) maximum pour ata_write_sectors (uint8_t) */
+  /* Cap at 255 sectors (127KB) maximum for ata_write_sectors (uint8_t) */
   uint32_t write_size = kernel_max_size;
   if (write_size > 255 * 512)
     write_size = 255 * 512;

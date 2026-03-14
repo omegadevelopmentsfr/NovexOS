@@ -85,10 +85,10 @@ static void fat_name_to_str(struct fat_dir_entry *entry, char *buf) {
 }
 
 /* -----------------------------------------------------------------------
- * fat32_mount_lba : monte un volume FAT32 à partir d'un LBA donné.
- * Met à jour toutes les variables globales (part_lba_start, fs_bpb,
- * fat_start_lba, data_start_lba). Retourne 1 si succès, 0 sinon.
- * Appelé par fat32_init() ET par fat32_format_partition().
+ * fat32_mount_lba: mount a FAT32 volume from a given LBA.
+ * Updates all global variables (part_lba_start, fs_bpb,
+ * fat_start_lba, data_start_lba). Returns 1 on success, 0 on failure.
+ * Called by fat32_init() AND by fat32_format_partition().
  * ----------------------------------------------------------------------- */
 static int fat32_mount_lba(uint32_t lba) {
   if (lba == 0)
@@ -97,18 +97,18 @@ static int fat32_mount_lba(uint32_t lba) {
   uint8_t buf[512];
   ata_read_sectors(lba, 1, buf);
 
-  /* Vérifier la signature 0x55AA */
+  /* Verify the 0x55AA boot signature */
   if (buf[510] != 0x55 || buf[511] != 0xAA)
     return 0;
 
-  /* Vérifier que c'est bien du FAT32 */
+  /* Verify that this is indeed FAT32 */
   struct bpb32 *b = (struct bpb32 *)buf;
   if (b->bytes_per_sector == 0 || b->sectors_per_cluster == 0)
     return 0;
   if (b->sectors_per_fat_32 == 0)
     return 0;
 
-  /* Tout est bon : copier le BPB et calculer les offsets */
+  /* All good: copy the BPB and compute offsets */
   memcpy(&fs_bpb, b, sizeof(struct bpb32));
   part_lba_start = lba;
   fat_start_lba = lba + fs_bpb.reserved_sectors;
@@ -118,9 +118,9 @@ static int fat32_mount_lba(uint32_t lba) {
 }
 
 void fat32_init(void) {
-  /* Pendant le boot depuis USB/CD, le disque dur peut ne pas avoir
-   * de partition FAT32 valide. On essaie quand même : si ça échoue,
-   * part_lba_start reste 0 et les fonctions FAT32 retournent -1. */
+  /* When booting from USB/CD, the hard disk may not have
+   * a valid FAT32 partition. We try anyway: if it fails,
+   * part_lba_start stays 0 and FAT32 functions return -1. */
   part_lba_start = 0;
 
   uint32_t lba = mbr_find_partition();
@@ -286,8 +286,8 @@ found:
   ((uint32_t *)sector_buf)[next_free_cluster % 128] = 0x0FFFFFFF;
   ata_write_sectors(fat_sector, 1, sector_buf);
 
-  /* Guard critique : si sectors_per_cluster est 0 (fat32_init pas encore
-   * appelé après un format), la division ligne suivante crasherait en #DE */
+  /* Critical guard: if sectors_per_cluster is 0 (fat32_init not yet
+   * called after a format), the division below would crash with #DE */
   if (fs_bpb.sectors_per_cluster == 0)
     return -1;
 
@@ -372,9 +372,9 @@ void fat32_format_partition(uint32_t lba_start, uint32_t sector_count) {
 
   terminal_writestring("FAT32: Formatting complete.\n");
 
-  /* Monter le volume fraîchement formaté pour initialiser les globales.
-   * CRITIQUE : sans ça, sectors_per_cluster = 0 → division par zéro
-   * dans fat32_write_file lors de l'installation. */
+  /* Mount the freshly formatted volume to initialize global variables.
+   * CRITICAL: without this, sectors_per_cluster = 0 -> division by zero
+   * in fat32_write_file during installation. */
   fat32_mount_lba(lba_start);
 }
 uint32_t fat32_cluster_to_lba(uint32_t cluster) {

@@ -2,16 +2,34 @@
  * NovexOS - desktop.c
  * NovexDE — Graphical Desktop Environment.
  *
- * Renders a desktop with:
- *   - Gradient wallpaper
- *   - Taskbar with NovexOS logo and system clock
- *   - Mouse cursor
- *   - Terminal window with shell integration
+ * Rendering strategy — dirty-rect optimisation
+ * --------------------------------------------
+ * A full redraw (background + windows + taskbar) is issued only when the
+ * scene actually changes:
+ *   - First frame
+ *   - Terminal window shown/hidden or dragged
+ *   - Power menu opened/closed
+ *   - Terminal buffer written to (keystroke / command output)
+ *   - Text cursor blink state toggles (every 500 ms)
  *
- * Double-buffered at ~30 FPS using PIT ticks.
+ * On all other frames (typically mouse movement at 60 fps):
+ *   1. Restore the 32×32 area that was saved before the previous cursor draw.
+ *   2. Optionally update only the clock region if the second ticked.
+ *   3. Save the new cursor area and draw the cursor.
+ *   4. Swap buffers.
+ *
+ * This reduces per-frame work from ~6 MB of memory ops (full blit + redraw)
+ * to ~6 KB (two 32×32 pixel save/restore) on idle mouse-move frames.
+ *
+ * CPU idle optimisation
+ * ---------------------
+ * The frame-rate throttle loop now executes HLT instead of spinning.
+ * The CPU sleeps until the next PIT interrupt (~1 ms) then re-checks the
+ * tick counter.  Reduces idle CPU usage from ~100% to near 0%.
  */
 
 #include "desktop.h"
+#include "assets.h"
 #include "fb.h"
 #include "font.h"
 #include "gui.h"
@@ -26,32 +44,56 @@
 extern void terminal_writestring(const char *s);
 extern void terminal_set_color(uint8_t color);
 
-/* --- Desktop state --- */
+/* =========================================================================
+ * Desktop state
+ * ========================================================================= */
 static int de_active = 0;
 static int show_power_menu = 0;
 
 /* Terminal window */
 static gui_window_t term_window;
 
-/* Embedded terminal: text buffer for the built-in terminal */
+/* =========================================================================
+ * Embedded terminal
+ * ========================================================================= */
 #define TERM_COLS 80
 #define TERM_ROWS 28
 #define TERM_BUF_SZ (TERM_COLS * TERM_ROWS)
 
 static char term_buf[TERM_BUF_SZ];
-static int term_cx = 0; /* cursor column */
-static int term_cy = 0; /* cursor row */
+static int term_cx = 0;
+static int term_cy = 0;
 
-/* Cursor for the mouse arrow sprite */
-static const uint8_t cursor_bitmap[19] = {
-    0x80, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF, 0xFF, 0xFC,
-    0xF8, 0xF0, 0xD8, 0x8C, 0x0C, 0x06, 0x06, 0x03, 0x03};
+/* Set whenever term_buf changes — triggers a full redraw next frame.
+ * Written from interrupt context (keyboard IRQ), so declared volatile. */
+static volatile int term_content_dirty = 1;
 
-static const uint8_t cursor_mask[19] = {
-    0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, 0xFE,
-    0xFC, 0xF8, 0xFC, 0xDE, 0x1E, 0x0F, 0x0F, 0x07, 0x07};
+/* =========================================================================
+ * Dirty-rendering state
+ * ========================================================================= */
 
-/* --- Internal terminal helpers --- */
+/* Cursor sprite save/restore — sized to the largest possible cursor (32x32) */
+#define CURSOR_SAVE_MAX 32
+static uint32_t cursor_save_buf[CURSOR_SAVE_MAX * CURSOR_SAVE_MAX];
+static int32_t cursor_save_x = -1000;
+static int32_t cursor_save_y = -1000;
+static int cursor_saved = 0;
+
+/* Scene-change tracking */
+static int full_dirty = 1; /* force first-frame full redraw */
+static int last_term_visible = -1;
+static int32_t last_win_x = -1;
+static int32_t last_win_y = -1;
+static int last_power_menu = -1;
+static int last_blink_state = -1;
+static uint32_t last_clock_secs = (uint32_t)-1;
+
+/* Pre-computed clock x position (set in desktop_init after fb_init) */
+static int32_t clock_x_pos = 0;
+
+/* =========================================================================
+ * Internal terminal helpers
+ * ========================================================================= */
 static void term_clear(void) {
   memset(term_buf, ' ', TERM_BUF_SZ);
   term_cx = 0;
@@ -65,6 +107,7 @@ static void term_scroll(void) {
 }
 
 static void term_putchar(char c) {
+  term_content_dirty = 1; /* mark scene dirty */
   if (c == '\n') {
     term_cx = 0;
     term_cy++;
@@ -89,117 +132,106 @@ static void term_putchar(char c) {
 
 void desktop_terminal_putchar(char c) { term_putchar(c); }
 
-/* --- Rendering --- */
-
-/* Render gradient wallpaper */
-static void render_wallpaper(void) {
-  uint32_t w = fb_get_width();
-  uint32_t h = fb_get_height();
-  uint32_t desktop_h = h - TASKBAR_HEIGHT;
-
-  for (uint32_t y = 0; y < desktop_h; y++) {
-    /* Interpolate between top and bottom colors */
-    uint8_t r_top = 0x0E, g_top = 0x0E, b_top = 0x28; /* Deep dark blue */
-    uint8_t r_bot = 0x16, g_bot = 0x34, b_bot = 0x60; /* Medium blue */
-
-    uint8_t r = (uint8_t)(r_top + (r_bot - r_top) * y / desktop_h);
-    uint8_t g = (uint8_t)(g_top + (g_bot - g_top) * y / desktop_h);
-    uint8_t b = (uint8_t)(b_top + (b_bot - b_top) * y / desktop_h);
-
-    uint32_t color = 0xFF000000 | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-    fb_hline(0, (int32_t)y, (int32_t)w, color);
-  }
-}
-
-/* Render taskbar */
-static void render_taskbar(void) {
-  uint32_t w = fb_get_width();
-  uint32_t h = fb_get_height();
-  int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
-
-  /* Taskbar background */
-  fb_fill_rect(0, ty, (int32_t)w, TASKBAR_HEIGHT, COLOR_TASKBAR);
-
-  /* Top border line (accent) */
-  fb_hline(0, ty, (int32_t)w, COLOR_ACCENT);
-
-  /* NovexOS/Menu button on the left */
-  gui_draw_button(6, ty + 6, 90, 28, get_string(STR_DESKTOP_BTN),
-                  show_power_menu ? COLOR_WIN_TITLE : COLOR_TASKBAR,
-                  COLOR_TEXT_WHITE);
-
-  /* Terminal button */
-  gui_draw_button(100, ty + 6, 90, 28, get_string(STR_CONSOLE_BTN),
-                  term_window.visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
-                  COLOR_TEXT_WHITE);
-
-  /* Power Menu rendering (if active) */
-  if (show_power_menu) {
-    int32_t menu_w = 120;
-    int32_t menu_h = 60;
-    int32_t menu_x = 6;
-    int32_t menu_y = ty - menu_h - 4;
-
-    /* Background and border */
-    fb_fill_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BG);
-    fb_draw_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BORDER);
-
-    /* Restart Option */
-    fb_fill_rect(menu_x + 2, menu_y + 2, menu_w - 4, 26,
-                 COLOR_WIN_BG); /* Hover state could go here */
-    fb_draw_string(menu_x + 10, menu_y + 8, get_string(STR_RESTART),
-                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
-
-    /* Shutdown Option */
-    fb_fill_rect(menu_x + 2, menu_y + 30, menu_w - 4, 26, COLOR_WIN_BG);
-    fb_draw_string(menu_x + 10, menu_y + 36, get_string(STR_SHUTDOWN),
-                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
-  }
-
-  /* System clock (uptime) on the right */
-  char time_buf[32];
+/* =========================================================================
+ * Clock formatting helper
+ * Returns the number of characters written into buf (always 8: HH:MM:SS).
+ * ========================================================================= */
+static int format_clock(char *buf) {
   uint32_t secs = timer_get_uptime_seconds();
   uint32_t mins = secs / 60;
   uint32_t hours = mins / 60;
   secs %= 60;
   mins %= 60;
 
-  /* Format HH:MM:SS */
-  char h_str[4], m_str[4], s_str[4];
-  int_to_str(hours, h_str);
-  int_to_str(mins, m_str);
-  int_to_str(secs, s_str);
+  char hs[4], ms[4], ss[4];
+  int_to_str(hours, hs);
+  int_to_str(mins, ms);
+  int_to_str(secs, ss);
 
   int idx = 0;
-  /* Hours */
   if (hours < 10)
-    time_buf[idx++] = '0';
-  for (int i = 0; h_str[i]; i++)
-    time_buf[idx++] = h_str[i];
-  time_buf[idx++] = ':';
-  /* Minutes */
+    buf[idx++] = '0';
+  for (int i = 0; hs[i]; i++)
+    buf[idx++] = hs[i];
+  buf[idx++] = ':';
   if (mins < 10)
-    time_buf[idx++] = '0';
-  for (int i = 0; m_str[i]; i++)
-    time_buf[idx++] = m_str[i];
-  time_buf[idx++] = ':';
-  /* Seconds */
+    buf[idx++] = '0';
+  for (int i = 0; ms[i]; i++)
+    buf[idx++] = ms[i];
+  buf[idx++] = ':';
   if (secs < 10)
-    time_buf[idx++] = '0';
-  for (int i = 0; s_str[i]; i++)
-    time_buf[idx++] = s_str[i];
-  time_buf[idx] = '\0';
-
-  int32_t clock_x = (int32_t)(w - (uint32_t)(idx * FONT_WIDTH) - 12);
-  fb_draw_string(clock_x, ty + 12, time_buf, COLOR_TASKBAR_TEXT, COLOR_TASKBAR);
+    buf[idx++] = '0';
+  for (int i = 0; ss[i]; i++)
+    buf[idx++] = ss[i];
+  buf[idx] = '\0';
+  return idx;
 }
 
-/* Render the terminal window content */
+/* =========================================================================
+ * Rendering helpers
+ * ========================================================================= */
+
+static void render_wallpaper(void) {
+  const sprite_t *bg = assets_get_background();
+  fb_draw_background(bg->pixels, bg->width, bg->height);
+}
+
+static void render_taskbar(void) {
+  uint32_t w = fb_get_width();
+  uint32_t h = fb_get_height();
+  int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
+
+  fb_fill_rect(0, ty, (int32_t)w, TASKBAR_HEIGHT, COLOR_TASKBAR);
+  fb_hline(0, ty, (int32_t)w, COLOR_ACCENT);
+
+  gui_draw_button(6, ty + 6, 90, 28, get_string(STR_DESKTOP_BTN),
+                  show_power_menu ? COLOR_WIN_TITLE : COLOR_TASKBAR,
+                  COLOR_TEXT_WHITE);
+  gui_draw_button(100, ty + 6, 90, 28, get_string(STR_CONSOLE_BTN),
+                  term_window.visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
+                  COLOR_TEXT_WHITE);
+
+  if (show_power_menu) {
+    int32_t menu_w = 120, menu_h = 60;
+    int32_t menu_x = 6, menu_y = ty - menu_h - 4;
+    fb_fill_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BG);
+    fb_draw_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BORDER);
+    fb_fill_rect(menu_x + 2, menu_y + 2, menu_w - 4, 26, COLOR_WIN_BG);
+    fb_draw_string(menu_x + 10, menu_y + 8, get_string(STR_RESTART),
+                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
+    fb_fill_rect(menu_x + 2, menu_y + 30, menu_w - 4, 26, COLOR_WIN_BG);
+    fb_draw_string(menu_x + 10, menu_y + 36, get_string(STR_SHUTDOWN),
+                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
+  }
+
+  /* Clock */
+  char time_buf[32];
+  int idx = format_clock(time_buf);
+  fb_draw_string(clock_x_pos, ty + 12, time_buf, COLOR_TASKBAR_TEXT,
+                 COLOR_TASKBAR);
+  (void)idx;
+}
+
+/*
+ * render_clock_only — partial update: erase + redraw only the clock area.
+ * Called on non-dirty frames when the second ticks.
+ */
+static void render_clock_only(void) {
+  uint32_t h = fb_get_height();
+  int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
+  /* Clock occupies at most 8 chars: "HH:MM:SS" */
+  int32_t cw = 8 * FONT_WIDTH + 4;
+  fb_fill_rect(clock_x_pos - 2, ty + 4, cw, TASKBAR_HEIGHT - 8, COLOR_TASKBAR);
+  char time_buf[32];
+  format_clock(time_buf);
+  fb_draw_string(clock_x_pos, ty + 12, time_buf, COLOR_TASKBAR_TEXT,
+                 COLOR_TASKBAR);
+}
+
 static void render_terminal_content(void) {
   int32_t cx = term_window.bounds.x + 4;
   int32_t cy = term_window.bounds.y + TITLEBAR_HEIGHT + 4;
 
-  /* Determine how many rows fit in the window */
   int32_t avail_h = term_window.bounds.h - TITLEBAR_HEIGHT - 8;
   int32_t max_rows = avail_h / FONT_HEIGHT;
   if (max_rows > TERM_ROWS)
@@ -213,38 +245,84 @@ static void render_terminal_content(void) {
   for (int32_t row = 0; row < max_rows; row++) {
     for (int32_t col = 0; col < max_cols; col++) {
       char ch = term_buf[row * TERM_COLS + col];
-      uint32_t fg = COLOR_TEXT_GREEN;
-
-      /* Color the prompt differently */
-      fb_draw_char(cx + col * FONT_WIDTH, cy + row * FONT_HEIGHT, ch, fg,
-                   COLOR_WIN_BG);
+      fb_draw_char(cx + col * FONT_WIDTH, cy + row * FONT_HEIGHT, ch,
+                   COLOR_TEXT_GREEN, COLOR_WIN_BG);
     }
   }
 
-  /* Draw blinking cursor (solid block) */
+  /* Blinking text cursor */
   uint32_t ticks = timer_get_ticks();
-  if ((ticks / 500) % 2 == 0) { /* Blink every ~0.5s at 1000Hz */
+  if ((ticks / 500) % 2 == 0) {
     int32_t cur_px = cx + term_cx * FONT_WIDTH;
     int32_t cur_py = cy + term_cy * FONT_HEIGHT;
     fb_fill_rect(cur_px, cur_py, FONT_WIDTH, FONT_HEIGHT, COLOR_TEXT_GREEN);
   }
 }
 
-/* Render mouse cursor */
 static void render_cursor(int32_t mx, int32_t my) {
-  for (int row = 0; row < 19; row++) {
-    for (int col = 0; col < 8; col++) {
-      if (cursor_mask[row] & (0x80 >> col)) {
-        uint32_t color = (cursor_bitmap[row] & (0x80 >> col))
-                             ? COLOR_CURSOR
-                             : 0xFF000000; /* Black outline */
-        fb_put_pixel(mx + col, my + row, color);
-      }
+  const sprite_t *cur = assets_get_cursor(CURSOR_POINTER);
+  fb_draw_sprite_alpha(mx - cur->hotspot_x, my - cur->hotspot_y, cur->pixels,
+                       cur->width, cur->height, COLOR_CURSOR, /* white fill  */
+                       0xFF000000u /* black outline */
+  );
+}
+
+/* =========================================================================
+ * Cursor sprite save / restore
+ * Saves the 32×32 backbuffer region that the cursor will overwrite, and
+ * restores it before the next cursor draw.  This lets partial-update frames
+ * skip the 3 MB background blit entirely.
+ * ========================================================================= */
+static void cursor_save_area(int32_t mx, int32_t my) {
+  const sprite_t *cur = assets_get_cursor(CURSOR_POINTER);
+  uint32_t sw = (cur->width < CURSOR_SAVE_MAX) ? cur->width : CURSOR_SAVE_MAX;
+  uint32_t sh = (cur->height < CURSOR_SAVE_MAX) ? cur->height : CURSOR_SAVE_MAX;
+  int32_t sx = mx - cur->hotspot_x;
+  int32_t sy = my - cur->hotspot_y;
+  uint32_t *bb = fb_get_backbuffer();
+  uint32_t bbw = fb_get_width();
+  uint32_t bbh = fb_get_height();
+
+  for (uint32_t row = 0; row < sh; row++) {
+    int32_t py = sy + (int32_t)row;
+    for (uint32_t col = 0; col < sw; col++) {
+      int32_t px = sx + (int32_t)col;
+      cursor_save_buf[row * CURSOR_SAVE_MAX + col] =
+          (px >= 0 && px < (int32_t)bbw && py >= 0 && py < (int32_t)bbh)
+              ? bb[py * bbw + px]
+              : 0u;
+    }
+  }
+  cursor_save_x = sx;
+  cursor_save_y = sy;
+  cursor_saved = 1;
+}
+
+static void cursor_restore_area(void) {
+  if (!cursor_saved)
+    return;
+  const sprite_t *cur = assets_get_cursor(CURSOR_POINTER);
+  uint32_t sw = (cur->width < CURSOR_SAVE_MAX) ? cur->width : CURSOR_SAVE_MAX;
+  uint32_t sh = (cur->height < CURSOR_SAVE_MAX) ? cur->height : CURSOR_SAVE_MAX;
+  uint32_t *bb = fb_get_backbuffer();
+  uint32_t bbw = fb_get_width();
+  uint32_t bbh = fb_get_height();
+
+  for (uint32_t row = 0; row < sh; row++) {
+    int32_t py = cursor_save_y + (int32_t)row;
+    if (py < 0 || py >= (int32_t)bbh)
+      continue;
+    for (uint32_t col = 0; col < sw; col++) {
+      int32_t px = cursor_save_x + (int32_t)col;
+      if (px >= 0 && px < (int32_t)bbw)
+        bb[py * bbw + px] = cursor_save_buf[row * CURSOR_SAVE_MAX + col];
     }
   }
 }
 
-/* --- Public API --- */
+/* =========================================================================
+ * Public API
+ * ========================================================================= */
 
 void desktop_init(void) {
   if (!vbe_is_available()) {
@@ -258,24 +336,20 @@ void desktop_init(void) {
   uint32_t w = vbe_get_width();
   uint32_t h = vbe_get_height();
 
-  /* Initialize framebuffer drawing system */
   fb_init(vbe_get_framebuffer(), w, h, vbe_get_pitch());
-
-  /* Set mouse bounds */
   mouse_set_bounds((int32_t)w, (int32_t)h);
 
-  /* Initialize terminal window — centered */
-  int32_t win_w = 660;
-  int32_t win_h = 480;
+  /* Pre-compute clock x position (8 chars "HH:MM:SS") */
+  clock_x_pos = (int32_t)(fb_get_width()) - 8 * FONT_WIDTH - 12;
+
+  int32_t win_w = 660, win_h = 480;
   int32_t win_x = ((int32_t)w - win_w) / 2;
   int32_t win_y = ((int32_t)(h - TASKBAR_HEIGHT) - win_h) / 2;
   gui_window_init(&term_window, win_x, win_y, win_w, win_h,
                   get_string(STR_CONSOLE_BTN));
-  term_window.visible = 0; /* Hidden by default per user request */
+  term_window.visible = 0;
 
-  /* Clear terminal buffer */
   term_clear();
-
   de_active = 1;
 }
 
@@ -290,7 +364,6 @@ void desktop_run(void) {
   uint8_t loop_count = 0;
 
   while (de_active) {
-    /* Throttle to ~60 FPS (every 16 ticks at 1000Hz) */
     uint32_t now = timer_get_ticks();
 
     if (loop_count == 0) {
@@ -300,8 +373,11 @@ void desktop_run(void) {
       loop_count = 1;
     }
 
+    /* Throttle to ~60 FPS.
+     * HLT suspends the CPU until the next interrupt (~1 ms PIT tick),
+     * eliminating the busy-spin that consumed 100% CPU. */
     if (now - last_tick < 16) {
-      /* Do NOT hlt if interrupts are active and we are in main loop */
+      __asm__ volatile("hlt");
       continue;
     }
 
@@ -311,64 +387,39 @@ void desktop_run(void) {
     }
     last_tick = now;
 
-    /* --- Render frame --- */
-
-    /* 1. Wallpaper */
-    render_wallpaper();
-
-    /* 2. Terminal window */
-    if (term_window.visible) {
-      gui_window_render(&term_window);
-      render_terminal_content();
-    }
-
-    /* 3. Taskbar (on top of everything except cursor) */
-    render_taskbar();
-
-    /* 4. Handle mouse interaction */
+    /* --- Mouse state ---------------------------------------------------- */
     int32_t mx = mouse_get_x();
     int32_t my = mouse_get_y();
     uint8_t buttons = mouse_get_buttons();
     uint32_t h = fb_get_height();
 
-    /* Window dragging and clicking */
-    if (buttons & 0x01) {           /* Left button pressed */
-      if (!(last_buttons & 0x01)) { /* Just clicked */
+    /* --- Mouse interaction (modifies scene state for next render) -------- */
+    if (buttons & 0x01) {           /* left button pressed */
+      if (!(last_buttons & 0x01)) { /* just clicked */
         int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
         if (show_power_menu) {
-          int32_t menu_w = 120;
-          int32_t menu_h = 60;
-          int32_t menu_x = 6;
-          int32_t menu_y = ty - menu_h - 4;
-
+          int32_t menu_w = 120, menu_h = 60;
+          int32_t menu_x = 6, menu_y = ty - menu_h - 4;
           if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y &&
               my <= menu_y + menu_h) {
-            /* Clicked inside power menu! */
             if (my < menu_y + 30) {
-              /* Restart */
               reboot();
             } else {
-              /* Shutdown (QEMU ACPI) */
               outw(0x604, 0x2000);
-              outw(0xB004, 0x2000); /* Alternate Bochs port */
+              outw(0xB004, 0x2000);
               __asm__ volatile("cli; hlt");
             }
           } else if (!(my >= ty && mx >= 6 && mx <= 96)) {
-            /* Clicked outside menu AND outside the NovexOS button -> close menu
-             */
             show_power_menu = 0;
           }
         }
 
         if (my >= ty) {
-          /* Taskbar clicked */
-          if (mx >= 6 && mx <= 96 && my >= ty + 6 && my <= ty + 34) {
+          if (mx >= 6 && mx <= 96 && my >= ty + 6 && my <= ty + 34)
             show_power_menu = !show_power_menu;
-          } else if (mx >= 100 && mx <= 190 && my >= ty + 6 && my <= ty + 34) {
+          else if (mx >= 100 && mx <= 190 && my >= ty + 6 && my <= ty + 34)
             term_window.visible = !term_window.visible;
-          }
         } else if (term_window.visible && !show_power_menu) {
-          /* Check titlebar click */
           gui_rect_t titlebar = {term_window.bounds.x, term_window.bounds.y,
                                  term_window.bounds.w, TITLEBAR_HEIGHT};
           if (gui_point_in_rect(mx, my, &titlebar)) {
@@ -385,8 +436,6 @@ void desktop_run(void) {
           }
         }
       }
-
-      /* Drag update */
       if (term_window.dragging && term_window.visible) {
         term_window.bounds.x = mx - term_window.drag_offset_x;
         term_window.bounds.y = my - term_window.drag_offset_y;
@@ -394,13 +443,57 @@ void desktop_run(void) {
     } else {
       term_window.dragging = 0;
     }
-
     last_buttons = buttons;
 
-    /* 5. Mouse cursor (always on top) */
+    /* --- Dirty check ---------------------------------------------------- */
+    uint32_t ticks = timer_get_ticks();
+    int blink_state = (int)((ticks / 500) % 2);
+
+    int need_full =
+        full_dirty || (term_window.visible != last_term_visible) ||
+        (term_window.visible && term_window.bounds.x != last_win_x) ||
+        (term_window.visible && term_window.bounds.y != last_win_y) ||
+        (show_power_menu != last_power_menu) ||
+        (term_window.visible && term_content_dirty) ||
+        (term_window.visible && blink_state != last_blink_state);
+
+    /* --- Render --------------------------------------------------------- */
+    if (need_full) {
+      /* Full scene redraw */
+      render_wallpaper();
+      if (term_window.visible) {
+        gui_window_render(&term_window);
+        render_terminal_content();
+      }
+      render_taskbar();
+
+      /* Update tracking state */
+      last_term_visible = term_window.visible;
+      last_win_x = term_window.bounds.x;
+      last_win_y = term_window.bounds.y;
+      last_power_menu = show_power_menu;
+      last_blink_state = blink_state;
+      last_clock_secs = timer_get_uptime_seconds();
+      term_content_dirty = 0;
+      full_dirty = 0;
+      cursor_saved = 0; /* saved area is stale after full redraw */
+    } else {
+      /* Partial update: restore previous cursor area */
+      cursor_restore_area();
+
+      /* Update clock region if the second changed */
+      uint32_t cur_secs = timer_get_uptime_seconds();
+      if (cur_secs != last_clock_secs) {
+        render_clock_only();
+        last_clock_secs = cur_secs;
+      }
+    }
+
+    /* Always: save the area under the new cursor position, draw cursor */
+    cursor_save_area(mx, my);
     render_cursor(mx, my);
 
-    /* 6. Swap buffers */
+    /* Swap back-buffer to screen */
     fb_swap();
   }
 }
@@ -408,9 +501,6 @@ void desktop_run(void) {
 void desktop_handle_key(char c) {
   if (!de_active)
     return;
-
-  /* If the window is focused (visible for now), route directly to real shell!
-   */
   if (term_window.visible) {
     extern void shell_input(char c);
     shell_input(c);

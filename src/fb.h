@@ -45,4 +45,30 @@ uint32_t *fb_get_backbuffer(void);
 uint32_t fb_get_width(void);
 uint32_t fb_get_height(void);
 
+/*
+ * Stretch a pre-baked background image to fill the entire screen using
+ * nearest-neighbor scaling.  No alpha blending — every pixel is overwritten.
+ * Much faster than a per-frame gradient loop.
+ *
+ * pixels[]   — RGB/ARGB pixel array (0xAARRGGBB), img_w * img_h entries.
+ * img_w/h    — source image dimensions (e.g. 320x240).
+ */
+void fb_draw_background(const uint32_t *pixels, uint32_t img_w, uint32_t img_h);
+
+/*
+ * Draw a sprite with per-pixel alpha blending.
+ *
+ * pixels[]  — ARGB pixel array (0xAARRGGBB), width*height entries.
+ * fg_color  — foreground tint applied to opaque pixels (0xAARRGGBB).
+ *             Pass 0x00000000 to use the raw pixel colours from the sprite.
+ * outline   — colour drawn around fully-transparent pixels that are
+ *             adjacent to opaque ones (0 = no outline).
+ *
+ * Alpha blending formula (per channel):
+ *   out = (src_alpha * src + (255 - src_alpha) * dst) / 255
+ */
+void fb_draw_sprite_alpha(int32_t x, int32_t y, const uint32_t *pixels,
+                          uint32_t w, uint32_t h, uint32_t fg_color,
+                          uint32_t outline);
+
 #endif /* FB_H */
