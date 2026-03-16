@@ -53,7 +53,7 @@ A Linux build environment is required (macOS and Windows are not currently suppo
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/omegadevelopmentsfr/novexOS.git
+git clone https://github.com/omegadevelopmentsfr/NovexOS.git
 cd novexOS
 ```
 
