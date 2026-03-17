@@ -59,7 +59,7 @@ cd novexOS
 
 ```bash
 # 2. Build the .iso file
-make iso
+make build
 ```
 
 ```bash
