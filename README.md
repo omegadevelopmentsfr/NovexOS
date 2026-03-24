@@ -93,6 +93,7 @@ make clean
 
 - [ ] OS installer (NovexInstaller)
 - [ ] FAT32, NTFS, Ext4 support
+- [ ] Python 3 Integration
 
 ### Planned
 
