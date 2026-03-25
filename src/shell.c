@@ -81,7 +81,6 @@ static void cmd_help(void) {
   terminal_writestring("  install       - Format disk (FAT32)\n");
   terminal_writestring("  edit <file>   - Open text editor\n");
   terminal_writestring("  startde       - Launch NovexDE desktop\n");
-  terminal_writestring("  python        - Python 3 REPL (interactive)\n");
   terminal_writestring("  python <file> - Run a .py script from RAM\n");
   terminal_writestring("  shutdown      - Power off\n");
   terminal_writestring("  reboot        - Reboot\n");
@@ -525,8 +524,6 @@ static void shell_execute(const char *cmd) {
   else if (strcmp(c, "startde") == 0) {
     vbe_init(NULL); /* Switch from VGA text to VBE Graphic */
     desktop_init();
-  } else if (strcmp(c, "python") == 0) {
-    python_repl();
   } else if (strncmp(c, "python ", 7) == 0) {
     python_run_file(c + 7);
   } else {
