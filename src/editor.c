@@ -5,6 +5,7 @@
  */
 
 #include "io.h"
+#include "keyboard.h"
 #include "ramfs.h"
 #include "string.h"
 #include "types.h"
@@ -16,12 +17,15 @@ extern void terminal_set_color(uint8_t color);
 extern void terminal_clear(void);
 extern uint8_t terminal_get_color(void);
 
+/* ------- Desktop mode helpers ------- */
+extern int desktop_is_active(void);
+extern void desktop_set_cursor(int row, int col);
+extern void desktop_print_welcome(void);
+
 /* ------- Constants ------- */
 #define EDITOR_MAX_LINES 100
 #define EDITOR_MAX_COLS 79
-#define EDITOR_VIEW_LINES                                                      \
-  22 /* Lines visible in edit area (25 - 3 for bars)                           \
-      */
+#define EDITOR_VIEW_LINES 20
 
 /* ------- Editor state ------- */
 static char lines[EDITOR_MAX_LINES][EDITOR_MAX_COLS + 1];
@@ -70,11 +74,60 @@ static void editor_int_to_str(int n, char *buf) {
   buf[j] = '\0';
 }
 
+/* ------- Redraw the editor (desktop terminal mode) ------- */
+static void editor_redraw_desktop(void) {
+  terminal_clear();
+
+  /* Title bar */
+  terminal_writestring("[ NovexEdit ] ");
+  terminal_writestring(filename);
+  if (modified)
+    terminal_writestring(" [modified]");
+  terminal_putchar('\n');
+  terminal_writestring("----------------------------------------"
+                       "----------------------------------------\n");
+
+  /* Edit area */
+  for (int i = 0; i < EDITOR_VIEW_LINES; i++) {
+    int line_idx = scroll_offset + i;
+    if (line_idx < line_count)
+      terminal_writestring(lines[line_idx]);
+    terminal_putchar('\n');
+  }
+
+  /* Status bar */
+  terminal_writestring("----------------------------------------"
+                       "----------------------------------------\n");
+  char buf[12];
+  terminal_writestring("Ln ");
+  editor_int_to_str(cursor_row + 1, buf);
+  terminal_writestring(buf);
+  terminal_writestring("  Col ");
+  editor_int_to_str(cursor_col + 1, buf);
+  terminal_writestring(buf);
+  terminal_writestring("  Lines:");
+  editor_int_to_str(line_count, buf);
+  terminal_writestring(buf);
+  /* Removed extra terminal_putchar('\n') to save space */
+
+  /* Shortcut bar (no trailing newline to avoid scroll) */
+  terminal_writestring("ESC:Exit   Ctrl+S:Save");
+
+  /* Place the software cursor on the correct line/column.
+   * Row 0 = title, row 1 = separator, rows 2..N+1 = edit area. */
+  int screen_row = (cursor_row - scroll_offset) + 2;
+  desktop_set_cursor(screen_row, cursor_col);
+}
+
 /* ------- Redraw the editor ------- */
 static void editor_redraw(void) {
+  if (desktop_is_active()) {
+    editor_redraw_desktop();
+    return;
+  }
   /* Title bar (row 0) */
   vga_fill_row(0, 0x70); /* Black on light grey */
-  vga_write_at(0, 1, "OmegaEdit - ", 0x70);
+  vga_write_at(0, 1, "NovexEdit - ", 0x70);
   vga_write_at(0, 13, filename, 0x70);
   if (modified) {
     int pos = 13 + (int)strlen(filename);
@@ -146,12 +199,18 @@ static void editor_save(void) {
 
   if (ramfs_write(filename, buf, pos) == 0) {
     modified = 0;
-    /* Flash status bar green briefly */
-    vga_fill_row(23, 0x20);
-    vga_write_at(23, 1, "Saved!", 0x2F);
+    if (desktop_is_active()) {
+      /* Status will be visible on next redraw — nothing extra needed */
+    } else {
+      /* Flash status bar green briefly */
+      vga_fill_row(23, 0x20);
+      vga_write_at(23, 1, "Saved!", 0x2F);
+    }
   } else {
-    vga_fill_row(23, 0x40);
-    vga_write_at(23, 1, "Error: could not save!", 0x4F);
+    if (!desktop_is_active()) {
+      vga_fill_row(23, 0x40);
+      vga_write_at(23, 1, "Error: could not save!", 0x4F);
+    }
   }
 }
 
@@ -220,18 +279,70 @@ void editor_input(char c) {
   if (!active)
     return;
 
-  /* ESC — exit editor */
+  /* ESC — exit editor.
+   * In desktop mode the render loop detects the active→inactive transition
+   * via desktop_check_editor_closed() and handles the reset itself.
+   * In text mode we clear and re-init the shell here directly. */
   if (c == 27) {
     active = 0;
-    terminal_clear();
-    extern void shell_init(void);
-    shell_init();
+    if (!desktop_is_active()) {
+      terminal_clear();
+      extern void shell_init(void);
+      shell_init();
+    }
     return;
   }
 
   /* Ctrl+S — save (ASCII 0x13 = DC3) */
   if (c == 19) {
     editor_save();
+    editor_redraw();
+    return;
+  }
+
+  /* Arrow keys */
+  if (c == KEY_UP) {
+    if (cursor_row > 0) {
+      cursor_row--;
+      int len = (int)strlen(lines[cursor_row]);
+      if (cursor_col > len)
+        cursor_col = len;
+    }
+    editor_ensure_visible();
+    editor_redraw();
+    return;
+  }
+  if (c == KEY_DOWN) {
+    if (cursor_row < line_count - 1) {
+      cursor_row++;
+      int len = (int)strlen(lines[cursor_row]);
+      if (cursor_col > len)
+        cursor_col = len;
+    }
+    editor_ensure_visible();
+    editor_redraw();
+    return;
+  }
+  if (c == KEY_LEFT) {
+    if (cursor_col > 0) {
+      cursor_col--;
+    } else if (cursor_row > 0) {
+      cursor_row--;
+      cursor_col = (int)strlen(lines[cursor_row]);
+    }
+    editor_ensure_visible();
+    editor_redraw();
+    return;
+  }
+  if (c == KEY_RIGHT) {
+    int len = (int)strlen(lines[cursor_row]);
+    if (cursor_col < len) {
+      cursor_col++;
+    } else if (cursor_row < line_count - 1) {
+      cursor_row++;
+      cursor_col = 0;
+    }
+    editor_ensure_visible();
     editor_redraw();
     return;
   }

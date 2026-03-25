@@ -13,6 +13,7 @@
 #include "keyboard.h"
 #include "mbr.h"
 #include "pmm.h"
+#include "python.h"
 #include "ramfs.h"
 #include "string.h"
 #include "timer.h"
@@ -41,7 +42,7 @@ static int is_disk(void) { return (strncmp(cwd, "disk:", 5) == 0); }
 static void shell_prompt(void) {
   uint8_t old = terminal_get_color();
   terminal_set_color(0x0B);
-  terminal_writestring("omega");
+  terminal_writestring("novex");
   terminal_set_color(0x0A);
   terminal_writestring("@");
   terminal_set_color(0x0E);
@@ -80,16 +81,18 @@ static void cmd_help(void) {
   terminal_writestring("  install       - Format disk (FAT32)\n");
   terminal_writestring("  edit <file>   - Open text editor\n");
   terminal_writestring("  startde       - Launch NovexDE desktop\n");
+  terminal_writestring("  python        - Python 3 REPL (interactive)\n");
+  terminal_writestring("  python <file> - Run a .py script from RAM\n");
   terminal_writestring("  shutdown      - Power off\n");
   terminal_writestring("  reboot        - Reboot\n");
 }
 
 static void cmd_uname(void) {
-  terminal_writestring("NovexOS v0.7.1 [x86_64] - FAT32 Support Enabled\n");
+  terminal_writestring("NovexOS v0.7.2 [x86_64] - FAT32 Support Enabled\n");
 }
 
 static void cmd_version(void) {
-  terminal_writestring("NovexOS version 0.7.1\n");
+  terminal_writestring("NovexOS version 0.7.2\n");
   terminal_writestring(
       "Features: 64-bit Long Mode, ATA LBA48 (PIO), FAT32, MBR\n");
 }
@@ -522,6 +525,10 @@ static void shell_execute(const char *cmd) {
   else if (strcmp(c, "startde") == 0) {
     vbe_init(NULL); /* Switch from VGA text to VBE Graphic */
     desktop_init();
+  } else if (strcmp(c, "python") == 0) {
+    python_repl();
+  } else if (strncmp(c, "python ", 7) == 0) {
+    python_run_file(c + 7);
   } else {
     terminal_writestring("Unknown command: ");
     terminal_writestring(c);
@@ -547,7 +554,8 @@ void shell_input(char c) {
     shell_execute(cmd_buffer);
     cmd_len = 0;
     memset(cmd_buffer, 0, SHELL_MAX_CMD);
-    shell_prompt();
+    if (!editor_is_active())
+      shell_prompt();
   } else if (c == '\b') {
     if (cmd_len > 0) {
       cmd_len--;

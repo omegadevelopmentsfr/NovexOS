@@ -153,7 +153,7 @@ disk_error:
     jmp .halt
 
 /* --- Data --- */
-msg_s2:      .asciz "\r\nOmegaStage2: "
+msg_s2:      .asciz "\r\nNovexStage2: "
 msg_loading: .asciz "loading"
 msg_jump:    .asciz " ok!\r\nJumping to NovexOS Kernel...\r\n"
 msg_error:   .asciz " DISK ERROR!\r\n"

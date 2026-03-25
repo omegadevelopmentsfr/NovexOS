@@ -50,6 +50,10 @@ extern void terminal_set_color(uint8_t color);
 static int de_active = 0;
 static int show_power_menu = 0;
 
+/* Tracks the editor state from the previous frame to detect close transitions.
+ */
+static int last_editor_active = 0;
+
 /* Terminal window */
 static gui_window_t term_window;
 
@@ -57,7 +61,7 @@ static gui_window_t term_window;
  * Embedded terminal
  * ========================================================================= */
 #define TERM_COLS 80
-#define TERM_ROWS 28
+#define TERM_ROWS 25
 #define TERM_BUF_SZ (TERM_COLS * TERM_ROWS)
 
 static char term_buf[TERM_BUF_SZ];
@@ -131,6 +135,60 @@ static void term_putchar(char c) {
 }
 
 void desktop_terminal_putchar(char c) { term_putchar(c); }
+
+/* =========================================================================
+ * Public helpers for the embedded terminal
+ * ========================================================================= */
+
+void desktop_terminal_clear(void) {
+  term_clear();
+  term_content_dirty = 1;
+}
+
+/* Move the software text cursor (used by the in-console editor). */
+void desktop_set_cursor(int row, int col) {
+  if (row >= 0 && row < TERM_ROWS)
+    term_cy = row;
+  if (col >= 0 && col < TERM_COLS)
+    term_cx = col;
+}
+
+/* Called from desktop_run() every frame to detect when the editor closes.
+ * Runs entirely in main-loop context — zero races with the render path. */
+static void desktop_check_editor_closed(void) {
+  extern int shell_is_editor_active(void);
+  int editor_now = shell_is_editor_active();
+  if (last_editor_active && !editor_now) {
+    /* Editor just closed: clear the dirty edit screen and reset the shell. */
+    term_clear();
+    desktop_print_welcome();
+    extern void shell_init(void);
+    shell_init();
+    full_dirty = 1;
+  }
+  last_editor_active = editor_now;
+}
+
+/* Print the NovexOS welcome banner into the desktop terminal buffer so the
+ * user sees it as soon as they open the Console window. */
+void desktop_print_welcome(void) {
+  const char *banner[] = {"  _   _                      ____   _____ \n",
+                          " | \\ | |                    / __ \\ / ____|\n",
+                          " |  \\| | _____   _______  _| |  | | (___  \n",
+                          " | . ` |/ _ \\ \\ / / _ \\ \\/ / |  | |\\___ \\ \n",
+                          " | |\\  | (_) \\ V /  __/>  <| |__| |____) |\n",
+                          " |_| \\_|\\___/ \\_/ \\___/_/\\_\\\\____/|_____/ \n",
+                          0};
+  int i;
+  for (i = 0; banner[i]; i++) {
+    const char *p = banner[i];
+    while (*p)
+      term_putchar(*p++);
+  }
+  const char *info = "\n NovexOS v0.7.2 - Bare Metal Monolithic Kernel\n\n";
+  while (*info)
+    term_putchar(*info++);
+}
 
 /* =========================================================================
  * Clock formatting helper
@@ -350,6 +408,7 @@ void desktop_init(void) {
   term_window.visible = 0;
 
   term_clear();
+  desktop_print_welcome();
   de_active = 1;
 }
 
@@ -386,6 +445,9 @@ void desktop_run(void) {
       loop_count = 2;
     }
     last_tick = now;
+
+    /* --- Poll for editor-closed transition -------------------------------- */
+    desktop_check_editor_closed();
 
     /* --- Mouse state ---------------------------------------------------- */
     int32_t mx = mouse_get_x();

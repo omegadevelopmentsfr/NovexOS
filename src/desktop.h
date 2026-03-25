@@ -23,4 +23,13 @@ int desktop_is_active(void);
 /* Forward a character from the main terminal to the DE terminal */
 void desktop_terminal_putchar(char c);
 
+/* Clear the DE terminal buffer */
+void desktop_terminal_clear(void);
+
+/* Set the DE terminal text cursor position */
+void desktop_set_cursor(int row, int col);
+
+/* Print the welcome banner into the DE terminal buffer */
+void desktop_print_welcome(void);
+
 #endif /* DESKTOP_H */

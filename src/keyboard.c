@@ -115,6 +115,24 @@ void keyboard_handler(void) {
     return;
   }
 
+  /* Arrow keys (Set 1 scancodes) */
+  if (scancode == 0x48) {
+    shell_input(KEY_UP);
+    return;
+  }
+  if (scancode == 0x50) {
+    shell_input(KEY_DOWN);
+    return;
+  }
+  if (scancode == 0x4B) {
+    shell_input(KEY_LEFT);
+    return;
+  }
+  if (scancode == 0x4D) {
+    shell_input(KEY_RIGHT);
+    return;
+  }
+
   /* Ctrl+key combinations */
   if (ctrl_held) {
     char c = scancode_qwerty[scancode];

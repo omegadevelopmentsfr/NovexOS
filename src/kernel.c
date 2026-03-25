@@ -171,6 +171,10 @@ void terminal_writestring(const char *data) {
 
 /* ------- Public: clear screen ------- */
 void terminal_clear(void) {
+  if (desktop_is_active()) {
+    desktop_terminal_clear();
+    return;
+  }
   terminal_row = 0;
   terminal_column = 0;
 
@@ -259,7 +263,7 @@ static void interactive_boot_sequence(void) {
   show_banner();
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("\n NovexOS v0.7.1 - Bare Metal Monolithic Kernel\n");
+  terminal_writestring("\n NovexOS v0.7.2 - Bare Metal Monolithic Kernel\n");
 
   terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
   terminal_writestring(get_string(STR_BOOT_COMPLETE));
