@@ -1,4 +1,4 @@
-﻿﻿# NovexOS
+﻿﻿## NovexOS
 
 ![Version](https://img.shields.io/badge/version-0.7.2--alpha-6C63FF)
 ![Kernel](https://img.shields.io/badge/kernel-custom%20built-informational)
