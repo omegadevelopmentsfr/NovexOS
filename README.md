@@ -144,4 +144,4 @@ For commercial licensing or special permissions, contact: [omegadevelopmentsfr@g
 
 ---
 
-Made with dedication by [Omega Developments](https://github.com/omega-developments)
+Made with dedication by [Omega Developments](https://omegadevelopmentsfr.dpdns.org)
