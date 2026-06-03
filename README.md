@@ -4,7 +4,7 @@
 ![Kernel](https://img.shields.io/badge/kernel-custom%20built-informational)
 ![License](https://img.shields.io/badge/license-CC%20BY--ND%204.0-red)
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
-![Built by](https://omegadevelopmentsfr.dpdns.org)
+![Built by](https://img.shields.io/badge/built%20by-Omega%20Developments-0ea5e9)
 
 A new generation desktop operating system — built from scratch by **Omega Developments**.
 
