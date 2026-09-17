@@ -31,23 +31,57 @@ NovexOS is a fully independent desktop operating system developed entirely from 
 
 ### Prerequisites
 
-```bash
-# Required
-gcc           # C compiler (system GCC or x86_64-elf-gcc cross-compiler)
-binutils      # Provides: as (assembler), ld (linker), objcopy
-make          # Build system
+NovexOS provides a dedicated dependency installer that automatically installs the
+required build tools for the detected operating system.
 
-# Required for make run / make iso
-qemu-system-x86_64  # Emulator for testing
-grub-mkrescue       # GRUB bootable ISO creation
-xorriso             # ISO image backend (used by grub-mkrescue)
+#### Automatic installation
+
+Run the installer:
+
+```bash
+python3 novexos_deps_installer.py
 ```
 
-> **Cross-compiler (optional but recommended):** If `x86_64-elf-gcc` is available, the Makefile will use it automatically. Otherwise it falls back to the system `gcc`. Using a dedicated cross-compiler avoids potential host contamination.
+The installer supports the following platforms:
 
-> **Note:** `nasm` is **not** required. All assembly files (`boot.s`, `interrupts.s`, `loader.s`) use GAS syntax and are assembled via `gcc` / `as`.
+- **Linux** — installs the required packages through `apt-get`.
+- **Windows** — supports both **Portable mode** (no administrator privileges)
+  and **System-wide mode** (administrator privileges). An optional WSL/Debian
+  component provides the ISO-generation tools required by `make iso`.
+- **macOS** — installs the required tools through **Homebrew** on a
+  best-effort basis.
 
-A Linux build environment is required (macOS and Windows are not currently supported).
+The installer covers the main NovexOS build dependencies:
+
+- `gcc` / `x86_64-elf-gcc` — C compiler and optional cross-compiler
+- `binutils` — assembler, linker and binary utilities
+- `make` — build system
+- `qemu-system-x86_64` / QEMU — emulator for testing
+- `grub-mkrescue` — GRUB bootable ISO creation
+- `xorriso` — ISO image backend used by `grub-mkrescue`
+- `mtools` — required by the GRUB ISO generation process
+
+> **Cross-compiler:** If `x86_64-elf-gcc` is available, the Makefile uses it
+> automatically. Otherwise, it falls back to the system `gcc`. Using a dedicated
+> cross-compiler avoids potential host contamination.
+
+> **Note:** `nasm` is **not** required. All assembly files (`boot.s`,
+> `interrupts.s`, `loader.s`) use GAS syntax and are assembled via `gcc` / `as`.
+
+#### Manual installation
+
+If you prefer to install the dependencies manually, make sure the tools listed
+above are available in your `PATH` before running `make build` or `make run`.
+
+> **Windows:** When using the installer's Portable mode, run the generated
+> `env.bat` script before building. In System-wide mode, open a new terminal
+> after installation so the updated system `PATH` is available.
+>
+> **Linux:** The dependencies are installed through `apt-get` and are available
+> directly after installation.
+>
+> **macOS:** The installer generates an `env.sh` script that can be sourced
+> before building.
 
 ### Build from Source (only on Linux for the moment)
 

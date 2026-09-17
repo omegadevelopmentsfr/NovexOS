@@ -2,27 +2,27 @@
 """
 NovexOS Build Dependencies Installer
 =====================================
-Application GUI (Tkinter, stdlib uniquement) pour installer les dépendances
-nécessaires au build de NovexOS, selon l'OS détecté.
+Tkinter-based GUI (standard library only) for installing the dependencies
+required to build NovexOS, based on the detected operating system.
 
-- Linux   : passe par apt-get (nécessite les droits root -> mot de passe sudo demandé)
-- Windows : installation SANS droits admin par défaut (mode Portable), ou installation
-            propre dans les dossiers système (mode Admin, PATH permanent). Une option
-            "WSL - outils ISO" facultative et légère permet en plus de générer une
-            vraie ISO bootable (grub-mkrescue n'existe pas nativement sous Windows) :
-            elle installe WSL/Debian si absent (léger, apt identique à Ubuntu) puis
-            SEULEMENT xorriso/grub/mtools dedans — make, le cross-compiler et QEMU
-            restent natifs Windows, inchangés.
-- macOS   : passe par Homebrew (non officiellement supporté par NovexOS, best-effort)
+- Linux   : uses apt-get (requires root privileges; prompts for the sudo password)
+- Windows : installs WITHOUT administrator privileges by default (Portable mode), or performs
+            a system-wide installation (Admin mode, permanent PATH). An optional
+            "WSL - ISO tools" component can also generate a
+            bootable ISO (grub-mkrescue is not natively available on Windows):
+            it installs WSL/Debian if required (lightweight, apt-compatible with Ubuntu), then
+            ONLY xorriso/grub/mtools inside WSL — make, the cross-compiler, and QEMU
+            remain native Windows tools and are unchanged.
+- macOS   : uses Homebrew (not officially supported by NovexOS; best effort)
 
-Une fois l'installation terminée, l'appli génère un script d'environnement
-(env.bat sous Windows, env.sh sous Linux/macOS) à sourcer/exécuter avant de
-lancer `make build`, pour que les outils installés dans le dossier choisi
-soient bien dans le PATH de la session.
+The application generates an environment script after installation
+(env.bat on Windows, env.sh on Linux/macOS) to source/run before
+launching `make build`, ensuring that tools installed in the selected directory
+are available in the current session's PATH.
 
-IMPORTANT : les URLs de téléchargement (surtout QEMU sous Windows et le tap
-Homebrew macOS) peuvent devenir obsolètes avec le temps. Elles sont toutes
-centralisées dans DEPENDENCIES ci-dessous pour être faciles à mettre à jour.
+IMPORTANT: Download URLs (especially QEMU on Windows and the macOS Homebrew tap)
+may become outdated over time. They are all
+centralized in DEPENDENCIES below to make them easy to update.
 """
 
 import json
@@ -45,17 +45,17 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 # --------------------------------------------------------------------------
-# Configuration des dépendances par OS
+# Dependency configuration by operating system
 # --------------------------------------------------------------------------
 
 DEPENDENCIES = {
     "Linux": [
         {"id": "build-essential", "label": "GCC + Make (build-essential)", "apt": "build-essential"},
         {"id": "binutils", "label": "Binutils (as, ld)", "apt": "binutils"},
-        {"id": "xorriso", "label": "xorriso (pour grub-mkrescue)", "apt": "xorriso"},
-        {"id": "grub-pc-bin", "label": "GRUB (binaires PC BIOS)", "apt": "grub-pc-bin"},
-        {"id": "grub-common", "label": "GRUB (commun, fournit grub-mkrescue)", "apt": "grub-common"},
-        {"id": "mtools", "label": "mtools (requis par grub-mkrescue)", "apt": "mtools"},
+        {"id": "xorriso", "label": "xorriso (required by grub-mkrescue)", "apt": "xorriso"},
+        {"id": "grub-pc-bin", "label": "GRUB (PC BIOS binaries)", "apt": "grub-pc-bin"},
+        {"id": "grub-common", "label": "GRUB (common files, provides grub-mkrescue)", "apt": "grub-common"},
+        {"id": "mtools", "label": "mtools (required by grub-mkrescue)", "apt": "mtools"},
         {"id": "qemu-system-x86", "label": "QEMU x86", "apt": "qemu-system-x86"},
     ],
     "Windows": [
@@ -76,19 +76,19 @@ DEPENDENCIES = {
         },
         {
             "id": "qemu",
-            "label": "QEMU (installeur silencieux, sans admin si hors Program Files)",
+            "label": "QEMU (silent installer; no admin required outside Program Files)",
             "type": "installer_silent",
             "index_url": "https://qemu.weilnetz.de/w64/",
             "asset_pattern": r"qemu-w64-setup-\d{8}\.exe",
         },
         {
             "id": "wsl_iso_tools",
-            "label": "WSL/Debian - outils ISO uniquement (grub-mkrescue, xorriso, mtools)",
+            "label": "WSL/Debian - ISO tools only (grub-mkrescue, xorriso, mtools)",
             "type": "wsl",
-            "note": "Léger : installe WSL/Debian si absent (pas Ubuntu — plus petit, apt "
-                    "identique), puis SEULEMENT les paquets nécessaires à la génération de "
-                    "l'ISO (make/gcc/QEMU restent natifs Windows, inchangés). Nécessite les "
-                    "droits admin pour l'activation initiale de WSL.",
+            "note": "Lightweight: installs WSL/Debian if missing (not Ubuntu — smaller, apt "
+                    "compatible), then ONLY the packages required for ISO generation "
+                    "(make/gcc/QEMU remain native Windows tools and are unchanged). Requires "
+                    "administrator privileges for the initial WSL setup.",
         },
     ],
     "Darwin": [
@@ -96,26 +96,26 @@ DEPENDENCIES = {
         {"id": "qemu", "label": "QEMU (Homebrew)", "brew": "qemu"},
         {
             "id": "cross_gcc",
-            "label": "Cross-compiler x86_64-elf-gcc (tap tiers, best-effort)",
+            "label": "x86_64-elf-gcc cross-compiler (third-party tap, best effort)",
             "brew_tap": "messense/macos-cross-toolchains",
             "brew": "x86_64-elf-gcc",
-            "note": "Tap non garanti à jour — vérifier manuellement si l'install échoue.",
+            "note": "Tap may be outdated — check manually if installation fails.",
         },
     ],
 }
 
 GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
-# Dossier système par défaut pour l'installation "propre" (admin) sous Windows
+# Default system directory for a Windows system-wide (admin) installation
 WINDOWS_SYSTEM_INSTALL_DIR = r"C:\Program Files\NovexOS-Toolchain"
 
 
 # --------------------------------------------------------------------------
-# Helpers Windows : élévation UAC + PATH système (HKLM)
+# Windows helpers: UAC elevation + system PATH (HKLM)
 # --------------------------------------------------------------------------
 
 def is_windows_admin() -> bool:
-    """Retourne True si le process tourne déjà avec des droits admin (Windows uniquement)."""
+    """Return True if the process is already running with administrator privileges (Windows only)."""
     if platform.system() != "Windows":
         return False
     try:
@@ -126,7 +126,7 @@ def is_windows_admin() -> bool:
 
 
 def relaunch_as_admin():
-    """Relance ce même script avec élévation UAC (Windows uniquement), puis quitte l'instance actuelle."""
+    """Relaunch this script with UAC elevation (Windows only), then exit the current instance."""
     import ctypes
     params = " ".join(f'"{a}"' for a in sys.argv)
     ctypes.windll.shell32.ShellExecuteW(
@@ -136,9 +136,9 @@ def relaunch_as_admin():
 
 def add_paths_to_system_path(paths):
     """
-    Ajoute durablement des dossiers au PATH système (HKLM), sans dupliquer
-    les entrées déjà présentes. Nécessite d'être exécuté en admin.
-    Puis notifie les autres processus du changement (WM_SETTINGCHANGE).
+    Permanently adds directories to the system PATH (HKLM), without duplicating
+    existing entries. Requires administrator privileges.
+    Then notifies other processes of the change (WM_SETTINGCHANGE).
     """
     import winreg
     import ctypes
@@ -154,12 +154,12 @@ def add_paths_to_system_path(paths):
         new_entries = [str(p) for p in paths if str(p).strip().lower() not in existing_entries]
 
         if not new_entries:
-            return  # rien à ajouter, déjà présent
+            return  # nothing to add; entries are already present
 
         updated = current.rstrip(";") + ";" + ";".join(new_entries)
         winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, updated)
 
-    # Diffuse le changement aux autres processus (Explorer, futurs terminaux, etc.)
+    # Broadcast the change to other processes (Explorer, future terminals, etc.)
     HWND_BROADCAST = 0xFFFF
     WM_SETTINGCHANGE = 0x1A
     SMTO_ABORTIFHUNG = 0x0002
@@ -171,7 +171,7 @@ def add_paths_to_system_path(paths):
 
 
 # --------------------------------------------------------------------------
-# Logique d'installation (thread séparé, communique via Queue)
+# Installation logic (separate thread, communication through Queue)
 # --------------------------------------------------------------------------
 
 class Installer:
@@ -187,7 +187,7 @@ class Installer:
     def done(self, ok, message=""):
         self.q.put(("done", (ok, message)))
 
-    # ---- téléchargement générique -----------------------------------
+    # ---- generic download -----------------------------------
     def download(self, url, dest_path: Path):
         self.log(f"Téléchargement : {url}")
 
@@ -273,7 +273,7 @@ class Installer:
         self.log(f"  -> dernier trouvé : {latest}")
         return url
 
-    # ---- Windows : mode portable (sans admin) ou mode système (admin) ----
+    # ---- Windows: portable (non-admin) or system-wide (admin) mode ----
     def install_windows(self, deps, install_dir: Path, system_mode: bool = False):
         install_dir.mkdir(parents=True, exist_ok=True)
         if system_mode:
@@ -312,16 +312,16 @@ class Installer:
                 installer_path = install_dir / "qemu-setup.exe"
                 self.download(download_url, installer_path)
                 dep_dir.mkdir(parents=True, exist_ok=True)
-                self.log("  Lancement de l'installeur QEMU en mode silencieux "
-                          "(pas d'admin requis car installé hors Program Files)...")
-                # IMPORTANT (NSIS) : le switch /D= n'accepte AUCUN guillemet autour du
-                # chemin, même s'il contient des espaces (ex: "C:\Program Files\...").
+                self.log("  Launching the QEMU installer in silent mode "
+                          "(no administrator privileges required because it is installed outside Program Files)...")
+                # IMPORTANT (NSIS): the /D= switch does NOT accept quotes around the
+                # path, even when it contains spaces (e.g. "C:\Program Files\...").
                 # En passant une liste à subprocess.run, Python quote automatiquement
                 # tout argument contenant un espace -> NSIS reçoit alors /D="C:\Program
-                # Files\..." avec des guillemets, ce qu'il refuse silencieusement (aucune
-                # erreur, mais installation dans le dossier par défaut ou nulle part).
-                # On construit donc la commande en une seule chaîne, avec /D= toujours
-                # en dernier et jamais quoté, et on l'exécute via shell=True.
+                # Files\..." with quotes, which NSIS silently rejects (no
+                # error is reported, but installation may use the default directory or fail).
+                # We therefore build the command as a single string, keeping /D= always
+                # last and never quoted, then execute it with shell=True.
                 dep_dir_str = str(dep_dir).rstrip("\\")
                 cmd = f'"{installer_path}" /S /D={dep_dir_str}'
                 self.log(f"  Commande : {cmd}")
@@ -333,32 +333,32 @@ class Installer:
                         timeout=300,
                     )
                 except Exception as e:
-                    raise RuntimeError(f"L'installeur QEMU a échoué : {e}")
+                    raise RuntimeError(f"L'QEMU installer failed : {e}")
 
                 if not any(dep_dir.glob("*.exe")):
                     raise RuntimeError(
-                        f"L'installeur QEMU s'est terminé sans erreur mais aucun .exe "
-                        f"n'a été trouvé dans {dep_dir}. Vérifie que le chemin d'installation "
-                        f"ne contient pas de guillemets mal placés, ou installe QEMU manuellement "
-                        f"dans ce dossier avec l'option /D."
+                        f"L'QEMU installer completed without errors, but no .exe "
+                        f"was found in {dep_dir}. Check that the installation path "
+                        f"does not contain misplaced quotes, or install QEMU manually "
+                        f"in this directory using the /D option."
                     )
                 installer_path.unlink(missing_ok=True)
 
-            # trouve le sous-dossier bin/ réel (l'archive peut extraire dans un sous-dossier imbriqué)
+            # Find the actual bin/ directory (the archive may extract into a nested subdirectory)
             candidate = self._find_bin_dir(dep_dir)
             if candidate:
                 bin_paths.append(candidate)
                 self.log(f"  -> ajouté au PATH : {candidate}")
             else:
                 self.log(f"  ATTENTION : dossier bin/ introuvable sous {dep_dir}, "
-                          f"vérifie manuellement le contenu.")
+                          f"check the contents manually.")
 
         if system_mode and bin_paths:
             self.log("\nÉcriture des chemins dans le PATH système (HKLM)...")
             try:
                 add_paths_to_system_path(bin_paths)
-                self.log("  -> PATH système mis à jour. Ouvre un NOUVEAU terminal pour "
-                          "que le changement soit pris en compte (pas besoin de redémarrer Windows).")
+                self.log("  -> System PATH updated. Open a NEW terminal so that the "
+                          "change takes effect (no Windows restart required).")
             except Exception as e:
                 raise RuntimeError(f"Échec de l'écriture du PATH système : {e}")
 
@@ -366,11 +366,10 @@ class Installer:
 
     @staticmethod
     def _find_bin_dir(root: Path, max_depth=4):
-        """Cherche le dossier le plus proche de la racine contenant des .exe.
-        Certains installeurs rangent tout dans bin/ (make, cross-compiler),
-        d'autres (QEMU) déposent les .exe directement à la racine — on
-        vérifie donc la racine elle-même avant de descendre dans l'arbre,
-        en largeur d'abord pour privilégier le résultat le plus proche."""
+        """Find the closest directory to the root containing .exe files.
+        Some installers place everything in bin/ (make, cross-compiler), while
+        others (QEMU) place .exe files directly in the root. Check the root first,
+        then traverse breadth-first to prefer the closest matching directory."""
         if not root.exists():
             return None
         queue = deque([(root, 0)])
@@ -387,24 +386,24 @@ class Installer:
                     pass
         return None
 
-    # ---- Windows : WSL léger, uniquement pour les outils de génération d'ISO ----
+    # ---- Windows: lightweight WSL, ISO-generation tools only ----------------
     def install_wsl_iso_tools(self, dep):
         if dep.get("note"):
             self.log(f"  Note : {dep['note']}")
 
         if shutil.which("wsl") is None:
             raise RuntimeError(
-                "La commande 'wsl' est introuvable. Ton Windows est probablement trop "
-                "ancien pour WSL2, ou la fonctionnalité n'est pas activable ici."
+                "The 'wsl' command was not found. Your Windows version may be too "
+                "old for WSL2, or the feature may not be available here."
             )
 
-        # 1. Vérifie si une distro WSL existe déjà
-        self.log("  Vérification des distributions WSL existantes...")
+        # 1. Check whether a WSL distribution already exists
+        self.log("  Checking for existing WSL distributions...")
         try:
             result = subprocess.run(
                 ["wsl", "-l", "-q"], capture_output=True, timeout=30
             )
-            # wsl -l -q sort du texte en UTF-16LE sous Windows
+            # wsl -l -q outputs text as UTF-16LE on Windows
             distros = [
                 d.strip() for d in result.stdout.decode("utf-16-le", errors="ignore").splitlines()
                 if d.strip()
@@ -413,8 +412,8 @@ class Installer:
             distros = []
 
         if not distros:
-            self.log("  Aucune distro WSL détectée. Installation de Debian "
-                      "(léger, apt identique à Ubuntu — nécessite les droits admin)...")
+            self.log("  No WSL distribution detected. Installing Debian "
+                      "(lightweight, apt-compatible with Ubuntu — requires administrator privileges)...")
             try:
                 subprocess.run(
                     ["wsl", "--install", "-d", "Debian", "--no-launch"],
@@ -422,29 +421,29 @@ class Installer:
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(
-                    f"L'installation de WSL/Debian a échoué (code {e.returncode}). "
-                    "Relance l'appli en tant qu'administrateur, ou installe manuellement "
+                    f"WSL/Debian installation failed (code {e.returncode}). "
+                    "Run the application as administrator, or install manually with: "
                     "avec : wsl --install -d Debian"
                 )
             self.log(
-                "  -> WSL/Debian installé. IMPORTANT : Windows peut demander un redémarrage "
-                "pour activer la virtualisation. Si c'est le cas, redémarre puis relance "
-                "l'installateur pour terminer (création du compte Linux au premier lancement "
-                "de 'wsl', puis les paquets ci-dessous)."
+                "  -> WSL/Debian installed. IMPORTANT: Windows may require a restart "
+                "to enable virtualization. If so, restart Windows and relaunch "
+                "the installer to finish (the Linux user account is created on the first "
+                "launch of 'wsl', followed by installation of the packages below)."
             )
             self.log(
-                "  Lance 'wsl' une fois manuellement pour finaliser la création du compte "
-                "utilisateur Linux (obligatoire au premier démarrage), puis relance "
-                "l'installateur pour poursuivre avec les paquets apt."
+                "  Run 'wsl' once manually to complete the Linux user account setup "
+                "(required on first launch), then relaunch "
+                "the installer to continue with the apt packages."
             )
             return  # rien de plus à faire tant que le compte Linux n'est pas créé
 
         self.log(f"  Distro(s) WSL détectée(s) : {', '.join(distros)}")
 
-        # 2. Installe uniquement les paquets nécessaires à l'ISO (léger, pas de
-        #    build-essential/qemu : ces outils restent natifs Windows).
+        # 2. Install only the packages required for ISO generation (lightweight; no
+        #    build-essential/QEMU: these tools remain native Windows components.
         packages = ["xorriso", "grub-common", "grub-pc-bin", "mtools"]
-        self.log(f"  Installation des paquets (via -u root, sans mot de passe) : {', '.join(packages)}")
+        self.log(f"  Installing packages (via -u root, without a password): {', '.join(packages)}")
         try:
             subprocess.run(
                 ["wsl", "-u", "root", "apt-get", "update"],
@@ -456,14 +455,14 @@ class Installer:
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(
-                f"Échec de l'installation des paquets dans WSL (code {e.returncode}). "
-                "Vérifie qu'une distro Debian/Ubuntu est bien installée (les commandes "
-                "apt-get ne fonctionnent pas sur toutes les distros WSL, ex: Alpine)."
+                f"Package installation in WSL failed (code {e.returncode}). "
+                "Make sure a Debian/Ubuntu distribution is installed (apt-get commands "
+                "do not work on all WSL distributions, e.g. Alpine)."
             )
 
-        self.log("  -> Outils ISO installés dans WSL. 'make iso' fonctionnera depuis Windows.")
+        self.log("  -> ISO tools installed in WSL. 'make iso' will work from Windows.")
 
-    # ---- Linux : apt-get (nécessite sudo) -----------------------------
+    # ---- Linux: apt-get (requires sudo) ------------------------------
     def install_linux(self, deps, sudo_password: str):
         packages = [d["apt"] for d in deps]
         self.log(f"Paquets à installer via apt : {', '.join(packages)}")
@@ -483,17 +482,17 @@ class Installer:
                 self.log(line.rstrip())
             proc.wait()
             if proc.returncode != 0:
-                raise RuntimeError(f"Commande échouée (code {proc.returncode}) : {' '.join(cmd)}")
+                raise RuntimeError(f"Command failed (code {proc.returncode}) : {' '.join(cmd)}")
 
         run_sudo(["apt-get", "update"])
         run_sudo(["apt-get", "install", "-y"] + packages)
 
-    # ---- macOS : Homebrew ----------------------------------------------
+    # ---- macOS: Homebrew ---------------------------------------------
     def install_macos(self, deps):
         if shutil.which("brew") is None:
             raise RuntimeError(
-                "Homebrew n'est pas installé. Installe-le d'abord depuis https://brew.sh "
-                "(nécessite une exécution manuelle du script officiel)."
+                "Homebrew is not installed. Install it first from https://brew.sh "
+                "(the official installation script must be run manually)."
             )
         for dep in deps:
             self.log(f"\n=== {dep['label']} ===")
@@ -510,11 +509,11 @@ class Installer:
             self.log(line.rstrip())
         proc.wait()
         if proc.returncode != 0:
-            raise RuntimeError(f"Commande échouée (code {proc.returncode}) : {' '.join(cmd)}")
+            raise RuntimeError(f"Command failed (code {proc.returncode}) : {' '.join(cmd)}")
 
 
 # --------------------------------------------------------------------------
-# Génération du script d'environnement (PATH pour la session de build)
+# Generate the environment script (PATH for the build session)
 # --------------------------------------------------------------------------
 
 def write_env_script(os_name, install_dir: Path, bin_paths):
@@ -532,7 +531,7 @@ def write_env_script(os_name, install_dir: Path, bin_paths):
         script.write_text(
             "#!/usr/bin/env bash\n"
             f'export PATH="{path_additions}:$PATH"\n'
-            'echo "Environnement NovexOS pret. Tu peux maintenant lancer : make build"\n'
+            'echo "NovexOS environment ready. You can now run: make build"\n'
         )
         script.chmod(0o755)
     return script
@@ -545,7 +544,7 @@ def write_env_script(os_name, install_dir: Path, bin_paths):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("NovexOS - Installateur de dépendances de build")
+        self.title("NovexOS - Build Dependency Installer")
         self.geometry("640x600")
         self.resizable(True, True)
 
@@ -569,47 +568,47 @@ class App(tk.Tk):
         if self.os_name not in DEPENDENCIES:
             ttk.Label(
                 self,
-                text="OS non reconnu — aucune dépendance connue pour cette plateforme.",
+                text="Unsupported operating system — no dependencies are defined for this platform.",
                 foreground="red",
             ).pack(**pad)
             return
 
-        # --- Mode d'installation (Windows uniquement : admin/système vs portable) ---
+        # --- Installation mode (Windows only: system-wide/admin vs. portable) ---
         self.install_mode_var = tk.StringVar(value="admin" if self.os_name == "Windows" else "n/a")
 
         if self.os_name == "Windows":
-            mode_frame = ttk.LabelFrame(self, text="Mode d'installation")
+            mode_frame = ttk.LabelFrame(self, text="Installation mode")
             mode_frame.pack(fill="x", **pad)
 
             ttk.Radiobutton(
                 mode_frame,
-                text="Propre (admin) — installe dans les dossiers système, PATH permanent",
+                text="System-wide (admin) — installs to system directories with a permanent PATH",
                 variable=self.install_mode_var,
                 value="admin",
                 command=self._on_mode_change,
             ).pack(anchor="w", padx=8, pady=2)
             ttk.Radiobutton(
                 mode_frame,
-                text="Portable (sans admin) — dossier au choix, PATH valable pour la session uniquement",
+                text="Portable (non-admin) — custom directory, PATH valid for the current session only",
                 variable=self.install_mode_var,
                 value="portable",
                 command=self._on_mode_change,
             ).pack(anchor="w", padx=8, pady=2)
 
-            admin_status = "admin ✔" if is_windows_admin() else "PAS admin — une fenêtre UAC sera demandée en mode Propre"
+            admin_status = "admin ✔" if is_windows_admin() else "Not admin — a UAC prompt will be requested in System-wide mode"
             ttk.Label(mode_frame, text=f"Statut actuel du process : {admin_status}", foreground="gray").pack(
                 anchor="w", padx=8, pady=(0, 4)
             )
 
-        # --- Dossier d'installation ---
-        path_frame = ttk.LabelFrame(self, text="Dossier d'installation")
+        # --- Installation directory ---
+        path_frame = ttk.LabelFrame(self, text="Installation directory")
         path_frame.pack(fill="x", **pad)
 
         default_dir = self._default_install_dir()
         self.path_var = tk.StringVar(value=str(default_dir))
         entry = ttk.Entry(path_frame, textvariable=self.path_var, width=60)
         entry.pack(side="left", padx=8, pady=8, fill="x", expand=True)
-        ttk.Button(path_frame, text="Parcourir...", command=self._browse).pack(
+        ttk.Button(path_frame, text="Browse...", command=self._browse).pack(
             side="left", padx=8
         )
 
@@ -620,7 +619,7 @@ class App(tk.Tk):
         self.noadmin_var = tk.BooleanVar(value=(self.os_name != "Linux"))
         noadmin_cb = ttk.Checkbutton(
             opt_frame,
-            text="Installation sans droits admin (binaires portables uniquement)",
+            text="Install without administrator privileges (portable binaries only)",
             variable=self.noadmin_var,
         )
         if self.os_name != "Windows":
@@ -629,22 +628,22 @@ class App(tk.Tk):
             noadmin_cb.state(["disabled"])
             ttk.Label(
                 opt_frame,
-                text="apt-get nécessite les droits root sous Linux — mot de passe sudo demandé ci-dessous.",
+                text="apt-get requires root privileges on Linux — enter the sudo password below.",
                 foreground="gray",
             ).pack(anchor="w", padx=8)
 
-        # --- Mot de passe sudo (Linux uniquement) ---
+        # --- Sudo password (Linux only) ---
         self.sudo_var = tk.StringVar()
         if self.os_name == "Linux":
             sudo_frame = ttk.Frame(opt_frame)
             sudo_frame.pack(fill="x", padx=8, pady=4)
-            ttk.Label(sudo_frame, text="Mot de passe sudo :").pack(side="left")
+            ttk.Label(sudo_frame, text="Sudo password:").pack(side="left")
             ttk.Entry(sudo_frame, textvariable=self.sudo_var, show="*", width=30).pack(
                 side="left", padx=8
             )
 
-        # --- Liste des dépendances ---
-        dep_frame = ttk.LabelFrame(self, text="Dépendances à installer")
+        # --- Dependency list ---
+        dep_frame = ttk.LabelFrame(self, text="Dependencies to install")
         dep_frame.pack(fill="both", expand=False, **pad)
         for dep in self.deps:
             var = tk.BooleanVar(value=True)
@@ -653,18 +652,18 @@ class App(tk.Tk):
                 anchor="w", padx=8, pady=2
             )
 
-        # --- Bouton d'installation ---
+        # --- Installation button ---
         self.install_btn = ttk.Button(
-            self, text="Installer les dépendances", command=self._on_install
+            self, text="Install dependencies", command=self._on_install
         )
         self.install_btn.pack(**pad)
 
-        # --- Barre de progression ---
+        # --- Progress bar ---
         self.progress = ttk.Progressbar(self, mode="determinate", maximum=100)
         self.progress.pack(fill="x", **pad)
 
         # --- Log ---
-        log_frame = ttk.LabelFrame(self, text="Journal")
+        log_frame = ttk.LabelFrame(self, text="Log")
         log_frame.pack(fill="both", expand=True, **pad)
         self.log_text = scrolledtext.ScrolledText(log_frame, height=14, state="disabled")
         self.log_text.pack(fill="both", expand=True, padx=4, pady=4)
@@ -677,7 +676,7 @@ class App(tk.Tk):
         elif self.os_name == "Darwin":
             return Path.home() / "novexos-toolchain"
         else:
-            return Path("/usr")  # apt installe dans les emplacements système standards
+            return Path("/usr")  # apt installs packages into standard system locations
 
     def _on_mode_change(self):
         self.path_var.set(str(self._default_install_dir()))
@@ -687,15 +686,15 @@ class App(tk.Tk):
         if chosen:
             self.path_var.set(chosen)
 
-    # ---- lancement de l'installation dans un thread -------------------
+    # ---- start installation in a separate thread --------------------
     def _on_install(self):
         selected = [d for d in self.deps if self.dep_vars[d["id"]].get()]
         if not selected:
-            messagebox.showwarning("Rien à faire", "Sélectionne au moins une dépendance.")
+            messagebox.showwarning("Nothing to do", "Select at least one dependency.")
             return
 
         if self.os_name == "Linux" and not self.sudo_var.get():
-            messagebox.showwarning("Mot de passe requis", "Entre ton mot de passe sudo.")
+            messagebox.showwarning("Password required", "Enter your sudo password.")
             return
 
         if (
@@ -704,10 +703,10 @@ class App(tk.Tk):
             and not is_windows_admin()
         ):
             relaunch = messagebox.askyesno(
-                "Droits administrateur requis",
-                "Le mode Propre installe dans les dossiers système et modifie le PATH "
-                "système : ça nécessite les droits admin.\n\n"
-                "Relancer l'application avec élévation (UAC) maintenant ?",
+                "Administrator privileges required",
+                "System-wide mode installs to system directories and modifies the system PATH "
+                "which requires administrator privileges.\n\n"
+                "Relaunch the application with UAC elevation now?",
             )
             if relaunch:
                 relaunch_as_admin()
@@ -732,20 +731,20 @@ class App(tk.Tk):
                 bin_paths = installer.install_windows(selected, install_dir, system_mode=system_mode)
                 if system_mode:
                     installer.log("\nInstallation terminée dans les dossiers système, "
-                                   "PATH mis à jour de façon permanente.")
-                    installer.log("Ouvre un NOUVEAU terminal (cmd/PowerShell) puis lance directement : "
+                                   "PATH permanently updated.")
+                    installer.log("Open a NEW terminal (cmd/PowerShell), then run directly: "
                                    "make build")
                 else:
                     script = write_env_script("Windows", install_dir, bin_paths)
                     installer.log(f"\nScript d'environnement généré : {script}")
                     installer.log(f"Avant de builder, lance : {script}")
-                    installer.log("Puis dans la même fenêtre : make build "
-                                   "(le Makefile détectera x86_64-elf-gcc automatiquement)")
+                    installer.log("Then, in the same window: make build "
+                                   "(the Makefile will automatically detect x86_64-elf-gcc)")
 
             elif self.os_name == "Linux":
                 installer.install_linux(selected, self.sudo_var.get())
                 installer.log("\nDépendances installées via apt. Rien d'autre à faire, "
-                               "make build fonctionnera directement.")
+                               "make build will work directly.")
 
             elif self.os_name == "Darwin":
                 installer.install_macos(selected)
@@ -754,11 +753,11 @@ class App(tk.Tk):
                 installer.log(f"\nScript d'environnement généré : {script}")
                 installer.log(f"Avant de builder : source {script}")
 
-            installer.done(True, "Installation terminée avec succès.")
+            installer.done(True, "Installation completed successfully.")
         except Exception as e:
             installer.done(False, str(e))
 
-    # ---- communication thread -> UI ------------------------------------
+    # ---- thread -> UI communication ---------------------------------
     def _poll_queue(self):
         try:
             while True:
@@ -771,9 +770,9 @@ class App(tk.Tk):
                     ok, message = payload
                     self.install_btn.state(["!disabled"])
                     if ok:
-                        messagebox.showinfo("Terminé", message)
+                        messagebox.showinfo("Completed", message)
                     else:
-                        messagebox.showerror("Erreur", message)
+                        messagebox.showerror("Error", message)
                         self._append_log(f"ERREUR : {message}")
         except Empty:
             pass
@@ -793,6 +792,6 @@ class App(tk.Tk):
 
 if __name__ == "__main__":
     if sys.version_info < (3, 8):
-        print("Python 3.8+ requis.")
+        print("Python 3.8+ is required.")
         sys.exit(1)
     App().mainloop()
