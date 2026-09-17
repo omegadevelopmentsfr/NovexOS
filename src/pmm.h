@@ -20,6 +20,13 @@ struct multiboot_mmap_entry {
   uint32_t type; /* 1 = available, other = reserved */
 } __attribute__((packed));
 
+struct multiboot_mod_entry {
+  uint32_t mod_start;
+  uint32_t mod_end;
+  uint32_t string;
+  uint32_t reserved;
+} __attribute__((packed));
+
 /* Multiboot info structure (only the fields we need) */
 struct multiboot_info {
   uint32_t flags;

@@ -54,8 +54,12 @@ void pmm_init(struct multiboot_info *mbi) {
 
   /*
    * If Multiboot provides a memory map, use it.
-   * Otherwise, heuristically mark memory above 1MiB as free.
+   * Otherwise, heuristically mark memory above the kernel as free.
    */
+  extern char _kernel_end[];
+  uint32_t kernel_end_page =
+      ((uintptr_t)_kernel_end + PAGE_SIZE - 1) / PAGE_SIZE;
+
   if (mbi && (mbi->flags & (1 << 6))) {
     /* Use Multiboot memory map */
     uint32_t mmap_end = mbi->mmap_addr + mbi->mmap_length;
@@ -80,8 +84,8 @@ void pmm_init(struct multiboot_info *mbi) {
         for (uint32_t page_addr = region_start;
              page_addr + PAGE_SIZE <= region_end; page_addr += PAGE_SIZE) {
           uint32_t page = page_addr / PAGE_SIZE;
-          if (page < total_pages_count && page >= 256) {
-            /* Skip first 1MiB (256 pages) — reserved for BIOS/kernel */
+          if (page < total_pages_count && page >= kernel_end_page) {
+            /* Skip memory reserved for BIOS and kernel */
             bitmap_clear(page);
           }
         }
@@ -90,9 +94,29 @@ void pmm_init(struct multiboot_info *mbi) {
       addr += entry->size + sizeof(uint32_t);
     }
   } else {
-    /* No mmap: mark pages above 2MiB as free (kernel is at 1MiB) */
-    for (uint32_t page = 512; page < total_pages_count; page++) {
+    /* No mmap: mark pages above kernel as free */
+    for (uint32_t page = kernel_end_page; page < total_pages_count; page++) {
       bitmap_clear(page);
+    }
+  }
+
+  /* Reserve pages used by GRUB-loaded modules (if any). These sit in
+   * otherwise "available" RAM per the memory map, so the mmap/heuristic
+   * marking above can wrongly mark them free -> pmm_alloc_page() hands
+   * them out -> the heap (or anything else) can silently corrupt live
+   * module data (and vice versa), which is a real, previously-missed
+   * source of memory corruption. */
+  if (mbi && (mbi->flags & (1 << 3)) && mbi->mods_count > 0) {
+    struct multiboot_mod_entry *mods =
+        (struct multiboot_mod_entry *)(uintptr_t)mbi->mods_addr;
+    for (uint32_t m = 0; m < mbi->mods_count; m++) {
+      uint32_t start_page = mods[m].mod_start / PAGE_SIZE;
+      uint32_t end_page = (mods[m].mod_end + PAGE_SIZE - 1) / PAGE_SIZE;
+      for (uint32_t page = start_page; page < end_page; page++) {
+        if (page < total_pages_count) {
+          bitmap_set(page);
+        }
+      }
     }
   }
 

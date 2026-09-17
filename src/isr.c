@@ -167,6 +167,22 @@ void isr_handler(registers_t *regs) {
     fat32_print_hex(regs->err_code);
     terminal_writestring(")\n");
 
+    /* Mirror to serial so it's visible even when VGA text isn't shown
+     * (e.g. desktop/installer running in graphical VBE mode). */
+    serial_print("\r\n[ISR] CRITICAL EXCEPTION int_no=");
+    serial_print_hex(regs->int_no);
+    serial_print(" rip=");
+    serial_print_hex((uint32_t)(regs->rip & 0xFFFFFFFF));
+    serial_print(" err_code=");
+    serial_print_hex((uint32_t)(regs->err_code & 0xFFFFFFFF));
+    if (regs->int_no == 14) {
+      uint64_t cr2;
+      __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+      serial_print(" cr2=");
+      serial_print_hex((uint32_t)(cr2 & 0xFFFFFFFF));
+    }
+    serial_print("\r\n");
+
     while (1)
       __asm__("hlt");
   }

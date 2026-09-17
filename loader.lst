@@ -1,0 +1,315 @@
+GAS LISTING src/loader.s 			page 1
+
+
+   1              	.code16
+   2              	.section .text
+   3              	.global _start
+   4              	
+   5              	/*
+   6              	 * Stage 2 Loader (V9 — FS-based Unreal Mode)
+   7              	 */
+   8              	
+   9              	_start:
+  10 0000 FA       	    cli
+  11              	    /* 1. DS/SS Setup */
+  12 0001 B80010   	    mov $0x1000, %ax
+  13 0004 8ED8     	    mov %ax, %ds
+  14 0006 88165C02 	    mov %dl, (drive_id)
+  15 000a 31C0     	    xor %ax, %ax
+  16 000c 8ED0     	    mov %ax, %ss
+  17 000e BC007C   	    mov $0x7C00, %sp
+  18              	
+  19              	    /* Banner and Diag '1' */
+  20 0011 BEFE01   	    mov $msg_s2, %si
+  21 0014 E83701   	    call print_string
+  22 0017 B800B8   	    mov $0xB800, %ax
+  23 001a 8EE8     	    mov %ax, %gs
+  24 001c 65C70600 	    movw $0x0F31, %gs:(0)
+  24      00310F
+  25              	
+  26              	    /* 2. Enable A20 */
+  27 0023 B80124   	    mov $0x2401, %ax
+  28 0026 CD15     	    int $0x15
+  29 0028 E492     	    in $0x92, %al
+  30 002a 0C02     	    or $2, %al
+  31 002c E692     	    out %al, $0x92
+  32 002e 65C70602 	    movw $0x0F32, %gs:(2)
+  32      00320F
+  33              	
+  34              	    /* 3. Prepare GDT and Enter PM/Unreal */
+  35 0035 E80200   	    call enter_unreal
+  36 0038 EB35     	    jmp 3f
+  37              	
+  38              	/* -------------------------------------
+  39              	 * enter_unreal
+  40              	 * Switches temporarily to PM to load FS 
+  41              	 * with a 4GB flat data descriptor.
+  42              	 * ------------------------------------- */
+  43              	enter_unreal:
+  44 003a 6650     	    push %eax
+  45 003c FA       	    cli
+  46 003d 0F011628 	    lgdt (gdt_ptr_unreal)
+  46      02
+  47 0042 0F20C0   	    mov %cr0, %eax
+  48 0045 6683C801 	    or $1, %eax
+  49 0049 0F22C0   	    mov %eax, %cr0
+  50              	
+  51 004c EB00     	    jmp 1f
+  52              	1:
+  53              	    /* Load only FS with 4GB flat data descriptor to use it in Unreal Mode */
+  54 004e B81000   	    mov $0x10, %ax
+GAS LISTING src/loader.s 			page 2
+
+
+  55 0051 8EE0     	    mov %ax, %fs
+  56              	
+  57              	    /* VGA Diag: '3' (Safe inside PM using FS) */
+  58 0053 66BF0480 	    movl $0xB8004, %edi
+  58      0B00
+  59 0059 6467C707 	    movw $0x0F33, %fs:(%edi)
+  59      330F
+  60              	
+  61              	    /* Exit PM back to Real Mode */
+  62 005f 0F20C0   	    mov %cr0, %eax
+  63 0062 6683E0FE 	    and $0xFFFFFFFE, %eax
+  64 0066 0F22C0   	    mov %eax, %cr0
+  65              	
+  66 0069 EB00     	    jmp 2f
+  67              	2:
+  68 006b FB       	    sti
+  69 006c 6658     	    pop %eax
+  70 006e C3       	    ret
+  71              	3:
+  72              	    /* Continuing _start... */
+  73              	
+  74              	    /* VGA Diag: '4' (Back in Real/Unreal mode) */
+  75 006f B800B8   	    mov $0xB800, %ax
+  76 0072 8EE8     	    mov %ax, %gs
+  77 0074 65C70606 	    movw $0x0F34, %gs:(6)
+  77      00340F
+  78              	
+  79              	    /* 4b. Detect extended memory (KB above 1 MB) via INT 15h / AH=88h.
+  80              	     *     This gives the PMM enough free pages so kmalloc works after boot.
+  81              	     *     QEMU with -m 512M returns 65535 (the AH=88h cap); that is >60 MB
+  82              	     *     of usable pages once the kernel is subtracted — plenty for NovexDE.
+  83              	     *     Interrupts must be enabled (sti already done above). */
+  84 007b B488     	    mov $0x88, %ah
+  85 007d CD15     	    int $0x15
+  86 007f 7212     	    jc .s2_mem_fallback    /* CF set = not supported */
+  87 0081 09C0     	    or %ax, %ax
+  88 0083 740E     	    jz .s2_mem_fallback    /* AX=0 is useless */
+  89 0085 66C7065D 	    movl $0, (mem_upper_kb)   /* zero high 16 bits first */
+  89      02000000 
+  89      00
+  90 008e A35D02   	    movw %ax, (mem_upper_kb)  /* store KB above 1 MB */
+  91 0091 EB09     	    jmp .s2_mem_done
+  92              	.s2_mem_fallback:
+  93 0093 66C7065D 	    movl $15360, (mem_upper_kb) /* safe default: 15 MB above 1 MB */
+  93      02003C00 
+  93      00
+  94              	.s2_mem_done:
+  95              	
+  96              	    /* 4. Load Kernel */
+  97 009c B40E     	    mov $0x0E, %ah
+  98 009e B04C     	    mov $'L', %al
+  99 00a0 CD10     	    int $0x10
+ 100              	
+ 101 00a2 66A1F001 	    mov (kernel_lba), %eax
+ 102 00a6 8B0EF401 	    mov (kernel_sectors), %cx
+ 103 00aa 66BF0000 	    movl $0x100000, %edi         /* 1MB Destination */
+ 103      1000
+GAS LISTING src/loader.s 			page 3
+
+
+ 104              	
+ 105              	load_loop:
+ 106 00b0 83F900   	    cmp $0, %cx
+ 107 00b3 7440     	    je load_done
+ 108 00b5 6650     	    push %eax
+ 109 00b7 51       	    push %cx
+ 110              	
+ 111              	    /* Buffer at 0x2000:0000 */
+ 112 00b8 B80020   	    mov $0x2000, %ax
+ 113 00bb 8EC0     	    mov %ax, %es
+ 114 00bd 31DB     	    xor %bx, %bx
+ 115 00bf B90100   	    mov $1, %cx
+ 116 00c2 E89500   	    call read_sectors
+ 117              	
+ 118              	    /* Copy to FS:EDI (High memory) */
+ 119 00c5 E872FF   	    call enter_unreal
+ 120 00c8 66BE0000 	    movl $0x20000, %esi
+ 120      0200
+ 121 00ce B98000   	    mov $128, %cx
+ 122              	.copy:
+ 123 00d1 6467     	    .byte 0x64, 0x67
+ 124 00d3 67668B06 	    movl (%esi), %eax
+ 125 00d7 6467     	    .byte 0x64, 0x67
+ 126 00d9 67668907 	    movl %eax, (%edi)
+ 127 00dd 6683C604 	    add $4, %esi
+ 128 00e1 6683C704 	    add $4, %edi
+ 129 00e5 E2EA     	    loop .copy
+ 130              	
+ 131 00e7 59       	    pop %cx
+ 132 00e8 6658     	    pop %eax
+ 133 00ea 6640     	    inc %eax
+ 134 00ec 49       	    dec %cx
+ 135              	
+ 136 00ed B40E     	    mov $0x0E, %ah
+ 137 00ef B02E     	    mov $'.', %al
+ 138 00f1 CD10     	    int $0x10
+ 139 00f3 EBBB     	    jmp load_loop
+ 140              	
+ 141              	load_done:
+ 142 00f5 BE0902   	    mov $msg_jump, %si
+ 143 00f8 E85300   	    call print_string
+ 144 00fb FA       	    cli
+ 145 00fc 0F011646 	    lgdt (gdt_ptr)
+ 145      02
+ 146 0101 0F20C0   	    mov %cr0, %eax
+ 147 0104 6683C801 	    or $1, %eax
+ 148 0108 0F22C0   	    mov %eax, %cr0
+ 149 010b 66EA     	    .byte 0x66, 0xEA
+ 150 010d 13010100 	    .long pm_kernel + 0x10000
+ 151 0111 0800     	    .word 0x08
+ 152              	
+ 153              	.code32
+ 154              	pm_kernel:
+ 155 0113 66B81000 	    mov $0x10, %ax
+ 156 0117 8ED8     	    mov %ax, %ds
+ 157 0119 8EC0     	    mov %ax, %es
+ 158 011b 8ED0     	    mov %ax, %ss
+GAS LISTING src/loader.s 			page 4
+
+
+ 159 011d B802B0AD 	    mov $0x2BADB002, %eax
+ 159      2B
+ 160 0122 BB000201 	    mov $0x10200, %ebx
+ 160      00
+ 161              	    /* Build a minimal but valid Multiboot info structure at 0x10200.
+ 162              	     * flags bit 0 = mem_lower / mem_upper fields are present.
+ 163              	     * Without a valid mem_upper the PMM sees 0 free pages → heap broken. */
+ 164 0127 C7030100 	    movl $0x1, (%ebx)                         /* flags: bit 0 set */
+ 164      0000
+ 165 012d C7430480 	    movl $640, 4(%ebx)                        /* mem_lower: 640 KB (conventional) */
+ 165      020000
+ 166 0134 8B0D5D02 	    movl (mem_upper_kb + 0x10000), %ecx       /* mem_upper: detected above 1 MB */
+ 166      0100
+ 167 013a 894B08   	    movl %ecx, 8(%ebx)
+ 168 013d 8B0DF801 	    mov (0x10000 + 504), %ecx                 /* kernel entry patched by installer */
+ 168      0100
+ 169 0143 66C70508 	    movw $0x4F4B, 0xB8008
+ 169      800B004B 
+ 169      4F
+ 170 014c FFE1     	    jmp *%ecx
+ 171              	
+ 172              	/* Helpers */
+ 173              	.code16
+ 174              	print_string:
+ 175 014e B40E     	    mov $0x0E, %ah
+ 176 0150 AC       	.ps_l: lodsb
+ 177 0151 84C0     	    test %al, %al
+ 178 0153 7404     	    jz .ps_d
+ 179 0155 CD10     	    int $0x10
+ 180 0157 EBF7     	    jmp .ps_l
+ 181 0159 C3       	.ps_d: ret
+ 182              	
+ 183              	read_sectors:
+ 184 015a 66A35402 	    mov %eax, (dap_lba)
+ 185 015e 890E4E02 	    mov %cx, (dap_count)
+ 186 0162 891E5002 	    mov %bx, (dap_offset)
+ 187 0166 8CC0     	    mov %es, %ax
+ 188 0168 A35202   	    mov %ax, (dap_segment)
+ 189 016b 8A165C02 	    mov (drive_id), %dl
+ 190 016f B442     	    mov $0x42, %ah
+ 191 0171 BE4C02   	    mov $dap, %si
+ 192 0174 CD13     	    int $0x13
+ 193 0176 C3       	    ret
+ 194              	
+ 195              	/* Patch area */
+ 196 0177 00000000 	.org 496
+ 196      00000000 
+ 196      00000000 
+ 196      00000000 
+ 196      00000000 
+ 197 01f0 00000000 	kernel_lba:     .long 0
+ 198 01f4 00000000 	kernel_sectors: .long 0
+ 199 01f8 00000000 	kernel_entry:   .long 0
+ 200 01fc 55AA     	magic:          .word 0xAA55
+ 201              	
+ 202 01fe 0D0A5374 	msg_s2:    .asciz "\r\nStage2: "
+ 202      61676532 
+GAS LISTING src/loader.s 			page 5
+
+
+ 202      3A2000
+ 203 0209 204F4B0D 	msg_jump:  .asciz " OK\r\n"
+ 203      0A00
+ 204              	
+ 205 020f 90       	.align 16
+ 206              	gdt_unreal:
+ 207 0210 00000000 	    .quad 0
+ 207      00000000 
+ 208 0218 FFFF0000 	    .quad 0x00CF9A000000FFFF /* Code 32 */
+ 208      009ACF00 
+ 209 0220 FFFF0000 	    .quad 0x00CF92000000FFFF /* Data 32 */
+ 209      0092CF00 
+ 210              	gdt_ptr_unreal:
+ 211 0228 1700     	    .word 23
+ 212 022a 10020100 	    .long gdt_unreal + 0x10000
+ 213              	
+ 214              	gdt_kernel:
+ 215 022e 00000000 	    .quad 0
+ 215      00000000 
+ 216 0236 FFFF0000 	    .quad 0x00CF9A000000FFFF
+ 216      009ACF00 
+ 217 023e FFFF0000 	    .quad 0x00CF92000000FFFF
+ 217      0092CF00 
+ 218              	gdt_ptr:
+ 219 0246 1700     	    .word 23
+ 220 0248 2E020100 	    .long gdt_kernel + 0x10000
+ 221              	
+ 222 024c 1000     	dap: .byte 0x10, 0
+ 223 024e 0100     	    dap_count:   .word 1
+ 224 0250 0000     	    dap_offset:  .word 0
+ 225 0252 0000     	    dap_segment: .word 0
+ 226 0254 00000000 	    dap_lba:     .quad 0
+ 226      00000000 
+ 227 025c 00       	drive_id: .byte 0
+ 228              	/* KB of memory above 1 MB as reported by INT 15h/AH=88h.
+ 229              	 * Populated in back_real before entering PM; read by pm_kernel to fill MBI. */
+ 230 025d 003C0000 	mem_upper_kb: .long 15360...
+GAS LISTING src/loader.s 			page 6
+
+
+DEFINED SYMBOLS
+        src/loader.s:9      .text:00000000 _start
+        src/loader.s:227    .text:0000025c drive_id
+        src/loader.s:202    .text:000001fe msg_s2
+        src/loader.s:174    .text:0000014e print_string
+        src/loader.s:43     .text:0000003a enter_unreal
+        src/loader.s:210    .text:00000228 gdt_ptr_unreal
+        src/loader.s:92     .text:00000093 .s2_mem_fallback
+        src/loader.s:230    .text:0000025d mem_upper_kb
+        src/loader.s:94     .text:0000009c .s2_mem_done
+        src/loader.s:197    .text:000001f0 kernel_lba
+        src/loader.s:198    .text:000001f4 kernel_sectors
+        src/loader.s:105    .text:000000b0 load_loop
+        src/loader.s:141    .text:000000f5 load_done
+        src/loader.s:183    .text:0000015a read_sectors
+        src/loader.s:122    .text:000000d1 .copy
+        src/loader.s:203    .text:00000209 msg_jump
+        src/loader.s:218    .text:00000246 gdt_ptr
+        src/loader.s:154    .text:00000113 pm_kernel
+        src/loader.s:176    .text:00000150 .ps_l
+        src/loader.s:181    .text:00000159 .ps_d
+        src/loader.s:226    .text:00000254 dap_lba
+        src/loader.s:223    .text:0000024e dap_count
+        src/loader.s:224    .text:00000250 dap_offset
+        src/loader.s:225    .text:00000252 dap_segment
+        src/loader.s:222    .text:0000024c dap
+        src/loader.s:199    .text:000001f8 kernel_entry
+        src/loader.s:200    .text:000001fc magic
+        src/loader.s:206    .text:00000210 gdt_unreal
+        src/loader.s:214    .text:0000022e gdt_kernel
+
+NO UNDEFINED SYMBOLS

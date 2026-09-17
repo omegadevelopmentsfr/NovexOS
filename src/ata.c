@@ -34,28 +34,35 @@ static void ata_delay400ns(void) {
 /* Wait for BSY to clear. Returns 0 on timeout, 1 on success.
  * Uses a raw counter (no timer) — works even before interrupts are enabled. */
 static int ata_wait_bsy(void) {
-  /* ~1 billion iterations ≈ several seconds on x86 */
-  for (uint32_t i = 0; i < 0x8000000; i++) {
+  for (uint32_t i = 0; i < 0x200000; i++) {
     uint8_t status = inb(ATA_PRIMARY_IO + 7);
-    if (status == 0xFF)
+    if (status == 0xFF) {
+      serial_print("[ATA] BSY check: floating bus (0xFF)\r\n");
       return 0; /* Floating bus */
+    }
     if (!(status & ATA_SR_BSY))
       return 1; /* OK */
   }
+  serial_print("[ATA] Timeout waiting for BSY to clear\r\n");
   return 0; /* Timeout */
 }
 
 /* Wait for DRQ to be set (data ready). */
 static int ata_wait_drq(void) {
-  for (uint32_t i = 0; i < 0x8000000; i++) {
+  for (uint32_t i = 0; i < 0x200000; i++) {
     uint8_t status = inb(ATA_PRIMARY_IO + 7);
-    if (status == 0xFF)
+    if (status == 0xFF) {
+      serial_print("[ATA] DRQ check: floating bus (0xFF)\r\n");
       return 0;
-    if (status & ATA_SR_ERR)
+    }
+    if (status & ATA_SR_ERR) {
+      serial_print("[ATA] DRQ check: ATA error bit set\r\n");
       return 0;
+    }
     if (status & ATA_SR_DRQ)
       return 1;
   }
+  serial_print("[ATA] Timeout waiting for DRQ\r\n");
   return 0; /* Timeout */
 }
 
@@ -162,6 +169,7 @@ void ata_read_sectors(uint32_t lba, uint8_t count, uint8_t *buffer) {
   outb(ATA_PRIMARY_IO + 7, ATA_CMD_READ_PIO);
 
   uint16_t *buf16 = (uint16_t *)buffer;
+  __asm__ volatile("cli");
   for (int i = 0; i < count; i++) {
     if (!ata_wait_bsy())
       break;
@@ -175,35 +183,51 @@ void ata_read_sectors(uint32_t lba, uint8_t count, uint8_t *buffer) {
       buf16[i * 256 + j] = tmp;
     }
   }
+  __asm__ volatile("sti");
 }
 
 /* -----------------------------------------------------------------------
  * ata_write_sectors: LBA28 write in PIO mode
  * ----------------------------------------------------------------------- */
 void ata_write_sectors(uint32_t lba, uint8_t count, uint8_t *buffer) {
-  for (uint16_t i = 0; i < count; i++) {
-    if (!ata_wait_bsy())
-      return;
+  if (count == 0)
+    return;
 
-    outb(ATA_PRIMARY_IO + 6, 0xE0 | (((lba + i) >> 24) & 0x0F));
-    ata_delay400ns();
-    outb(ATA_PRIMARY_IO + 2, 1);
-    outb(ATA_PRIMARY_IO + 3, (uint8_t)(lba + i));
-    outb(ATA_PRIMARY_IO + 4, (uint8_t)((lba + i) >> 8));
-    outb(ATA_PRIMARY_IO + 5, (uint8_t)((lba + i) >> 16));
-    outb(ATA_PRIMARY_IO + 7, ATA_CMD_WRITE_PIO);
+  if (!ata_wait_bsy())
+    return;
 
-    if (!ata_wait_bsy())
+  /* 0xE0 = Master + LBA mode */
+  outb(ATA_PRIMARY_IO + 6, 0xE0 | ((lba >> 24) & 0x0F));
+  ata_delay400ns();
+
+  outb(ATA_PRIMARY_IO + 2, count);
+  outb(ATA_PRIMARY_IO + 3, (uint8_t)(lba));
+  outb(ATA_PRIMARY_IO + 4, (uint8_t)(lba >> 8));
+  outb(ATA_PRIMARY_IO + 5, (uint8_t)(lba >> 16));
+  outb(ATA_PRIMARY_IO + 7, ATA_CMD_WRITE_PIO);
+
+  __asm__ volatile("cli");
+  for (int i = 0; i < count; i++) {
+    if (!ata_wait_bsy()) {
+      __asm__ volatile("sti");
       return;
-    if (!ata_wait_drq())
+    }
+    if (!ata_wait_drq()) {
+      __asm__ volatile("sti");
       return;
+    }
 
     uint16_t *buf16 = (uint16_t *)(buffer + (i * 512));
     for (int j = 0; j < 256; j++) {
-      outw(buf16[j], ATA_PRIMARY_IO);
+      outw(ATA_PRIMARY_IO, buf16[j]);
     }
-    /* Cache flush after write */
-    outb(ATA_PRIMARY_IO + 7, 0xE7);
-    ata_wait_bsy();
   }
+
+  /* Wait for the drive to process the last sector before flushing */
+  ata_wait_bsy();
+
+  /* Flush cache once after the whole operation */
+  outb(ATA_PRIMARY_IO + 7, 0xE7);
+  ata_wait_bsy();
+  __asm__ volatile("sti");
 }

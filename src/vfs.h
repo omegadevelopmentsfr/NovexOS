@@ -33,6 +33,15 @@ void vfs_init(void);
 /* Read file from any detected filesystem */
 int vfs_read_file(const char *filename, uint8_t *buffer, uint32_t max_len);
 
+/* Write file to detected filesystem */
+int vfs_write_file(const char *filename, const uint8_t *buffer, uint32_t len);
+
+/* Delete file or directory from detected filesystem */
+int vfs_delete_file(const char *filename);
+
+/* Create directory */
+int vfs_mkdir(const char *dirname);
+
 /* List directory */
 void vfs_list_dir(const char *path);
 

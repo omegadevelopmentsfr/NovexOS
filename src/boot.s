@@ -56,7 +56,10 @@ gdt64_ptr:
 
 _start:
     cli
-    # 1. TRACE 'A' (Red): Kernel started
+    # 1. TRACE 'K' (White on Blue): Kernel entry reached
+    movw $0x1F4B, (0xB800A)
+
+    # TRACE 'A' (Red): Kernel started
     movw $0x4F41, (0xB8000)
 
     # Save the Multiboot pointer (EBX)
@@ -64,6 +67,13 @@ _start:
 
     # Set up temporary stack
     mov $stack_top, %esp
+
+    # 1.5. Zero all page tables
+    # (PML4, PDPT, PD are 3 tables, then 8 PTs = 11 tables total)
+    mov $pml4_table, %edi
+    mov $11264, %ecx  # (11 * 4096) / 4 -- 11 page tables of 4096B, in dwords
+    xor %eax, %eax
+    rep stosl
 
     # 2. Clear BSS section
     mov $_sbss, %edi
@@ -76,57 +86,77 @@ _start:
     movw $0x0F32, (0xB8002)
 
     # 3. Set up paging (Identity Map 16MB)
+    # NOTE: "mov %eax, (symbol)" is deliberately avoided here.
+    # GAS mis-encodes that accumulator+absolute-address form as a
+    # 64-bit moffs (opcode A3 with an 8-byte address) even inside a
+    # .code32 section, because this whole file is assembled with -m64
+    # (required for the .code64 half below). That extra 4 bytes
+    # desyncs every instruction after it, which is what was crashing
+    # the boot. Fix: always go through a scratch register (%edx) so
+    # GAS is forced to emit the normal ModRM encoding instead.
+
     # PML4[0] -> PDPT
     mov $pdpt_table, %eax
     or $0x3, %eax
-    mov %eax, (pml4_table)
+    mov $pml4_table, %edx
+    mov %eax, (%edx)
 
     # PDPT[0] -> PD
     mov $pd_table, %eax
     or $0x3, %eax
-    mov %eax, (pdpt_table)
+    mov $pdpt_table, %edx
+    mov %eax, (%edx)
 
     # PD[0] -> PT0, PD[1] -> PT1, ..., PD[7] -> PT7
     # Each PD entry covers 2MB, so 8 entries = 16MB
 
     mov $pt_table0, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 0)
+    mov $pd_table, %edx
+    mov %eax, (%edx)
 
     mov $pt_table1, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 8)
+    mov $pd_table, %edx
+    mov %eax, 8(%edx)
 
     mov $pt_table2, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 16)
+    mov $pd_table, %edx
+    mov %eax, 16(%edx)
 
     mov $pt_table3, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 24)
+    mov $pd_table, %edx
+    mov %eax, 24(%edx)
 
     mov $pt_table4, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 32)
+    mov $pd_table, %edx
+    mov %eax, 32(%edx)
 
     mov $pt_table5, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 40)
+    mov $pd_table, %edx
+    mov %eax, 40(%edx)
 
     mov $pt_table6, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 48)
+    mov $pd_table, %edx
+    mov %eax, 48(%edx)
 
     mov $pt_table7, %eax
     or $0x3, %eax
-    mov %eax, (pd_table + 56)
+    mov $pd_table, %edx
+    mov %eax, 56(%edx)
 
     # Fill the 8 PTs (map 8x512 4KB pages = 16MB)
     mov $pt_table0, %edi
     mov $0x03, %eax            # Present + Writable
-    mov $(512 * 8), %ecx       # 4096 entries total (16MB)
+    mov $0x1000, %ecx       # (512 * 8) = 4096 entries total (16MB)
 .loop_pt:
-    mov %eax, (%edi)
+    mov %eax, (%edi)           # Low 32 bits
+    movl $0, 4(%edi)           # High 32 bits (Must be 0 for identity map < 4GB)
     add $4096, %eax
     add $8, %edi
     loop .loop_pt
@@ -139,19 +169,19 @@ _start:
     mov %eax, %cr3
 
     mov %cr4, %eax
-    or $(1 << 5), %eax # PAE
+    or $0x20, %eax # PAE (bit 5)
     mov %eax, %cr4
 
     mov $0xC0000080, %ecx
     rdmsr
-    or $(1 << 8), %eax # LME
+    or $0x100, %eax # LME (bit 8)
     wrmsr
 
     # TRACE '4': LME enabled
     movw $0x0F34, (0xB8006)
 
     mov %cr0, %eax
-    or $(1 << 31), %eax # Paging ON
+    or $0x80000000, %eax # Paging ON (bit 31)
     mov %eax, %cr0
 
     # Load 64-bit GDT

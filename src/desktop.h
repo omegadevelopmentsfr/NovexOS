@@ -13,6 +13,7 @@ void desktop_init(void);
 
 /* Main render/event loop — called from kernel halt loop when DE is active */
 void desktop_run(void);
+void desktop_loop_iteration(void);
 
 /* Event handlers (called from interrupt context) */
 void desktop_handle_key(char c);
@@ -31,5 +32,13 @@ void desktop_set_cursor(int row, int col);
 
 /* Print the welcome banner into the DE terminal buffer */
 void desktop_print_welcome(void);
+
+/* Request a full desktop scene redraw on the next frame */
+void desktop_request_redraw(void);
+
+/* Compose and show a requested redraw immediately.  Graphical Python calls
+ * this while a script is still executing, before control returns to the
+ * regular desktop loop. */
+void desktop_present_now(void);
 
 #endif /* DESKTOP_H */

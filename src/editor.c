@@ -4,11 +4,15 @@
  * Supports Ctrl+S to save to RAM filesystem.
  */
 
+#include "fat32.h"
 #include "io.h"
 #include "keyboard.h"
 #include "ramfs.h"
+#include "shell.h"
 #include "string.h"
 #include "types.h"
+
+extern int system_booted_from_disk(void);
 
 /* ------- External terminal functions (kernel.c) ------- */
 extern void terminal_putchar(char c);
@@ -182,7 +186,7 @@ static void editor_redraw(void) {
   outb(0x3D5, (uint8_t)(cursor_pos & 0xFF));
 }
 
-/* ------- Save to ramfs ------- */
+/* ------- Save to ramfs or disk ------- */
 static void editor_save(void) {
   /* Flatten lines into a single buffer */
   char buf[RAMFS_MAX_FILESIZE];
@@ -197,7 +201,18 @@ static void editor_save(void) {
     buf[pos++] = '\n';
   }
 
-  if (ramfs_write(filename, buf, pos) == 0) {
+  int success = 0;
+  if (shell_is_disk() || system_booted_from_disk()) {
+    if (fat32_write_file(filename, (uint8_t *)buf, pos) == 0) {
+      success = 1;
+    }
+  } else {
+    if (ramfs_write(filename, buf, pos) == 0) {
+      success = 1;
+    }
+  }
+
+  if (success) {
     modified = 0;
     if (desktop_is_active()) {
       /* Status will be visible on next redraw — nothing extra needed */
@@ -214,10 +229,23 @@ static void editor_save(void) {
   }
 }
 
-/* ------- Load from ramfs ------- */
+/* ------- Load from ramfs or disk ------- */
 static void editor_load(void) {
-  uint32_t size;
-  const char *data = ramfs_read(filename, &size);
+  uint32_t size = 0;
+  const char *data = NULL;
+  uint8_t disk_buf[RAMFS_MAX_FILESIZE];
+
+  if (shell_is_disk() || system_booted_from_disk()) {
+    int res = fat32_read_file(filename, disk_buf, sizeof(disk_buf) - 1);
+    if (res >= 0) {
+      disk_buf[res] = '\0';
+      data = (const char *)disk_buf;
+      size = (uint32_t)res;
+    }
+  } else {
+    data = ramfs_read(filename, &size);
+  }
+
   if (!data)
     return;
 

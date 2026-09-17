@@ -39,7 +39,7 @@ static int ramfs_find_free(void) {
 }
 
 int ramfs_write(const char *name, const char *data, uint32_t size) {
-  if (size > RAMFS_MAX_FILESIZE)
+  if (size >= RAMFS_MAX_FILESIZE)
     return -1;
 
   int idx = ramfs_find(name);
@@ -97,6 +97,11 @@ int ramfs_delete(const char *name) {
   files[idx].is_dir = false;
   memset(files[idx].name, 0, RAMFS_MAX_NAME);
   return 0;
+}
+
+int ramfs_is_dir(const char *name) {
+  int idx = ramfs_find(name);
+  return (idx >= 0 && files[idx].is_dir) ? 1 : 0;
 }
 
 void ramfs_list(void (*callback)(const char *name, uint32_t size,

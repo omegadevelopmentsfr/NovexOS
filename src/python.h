@@ -19,10 +19,21 @@
 #ifndef PYTHON_H
 #define PYTHON_H
 
+#include "types.h"
+
 /* Run a Python script stored in RAMFS */
 void python_run_file(const char *filename);
 
 /* Launch interactive Python REPL */
 void python_repl(void);
+
+/* Check if turtle graphics mode is currently active */
+int python_is_turtle_active(void);
+
+/* Desktop hooks for the turtle application window. */
+void python_turtle_render(void);
+int python_turtle_pointer_down(int32_t x, int32_t y);
+void python_turtle_pointer_move(int32_t x, int32_t y);
+void python_turtle_pointer_up(void);
 
 #endif /* PYTHON_H */

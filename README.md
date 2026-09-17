@@ -1,6 +1,6 @@
 ## NovexOS
 
-![Version](https://img.shields.io/badge/version-0.7.2--alpha-6C63FF)
+![Version](https://img.shields.io/badge/version-0.8.0--alpha-6C63FF)
 ![Kernel](https://img.shields.io/badge/kernel-custom%20built-informational)
 ![License](https://img.shields.io/badge/license-CC%20BY--ND%204.0-red)
 ![Status](https://img.shields.io/badge/status-in%20development-orange)
@@ -88,18 +88,19 @@ make clean
 - [x] Keyboard & PS/2 driver
 - [x] Basic shell (NovexShell)
 - [x] NovexDE — graphical desktop environment
-- [x] Python 3 Integration (NovexPy)
+- [x] Python 3 Integration (NovexPy) (Partially done)
+- [x] OS installer (NovexInstaller) (Partially done)
+- [x] FAT32, Ext4 support
+- [x] NovexFS — custom filesystem (Partially done)
 
 ### In Progress
 
-- [ ] OS installer (NovexInstaller)
-- [ ] FAT32, NTFS, Ext4 support
+- [ ] NTFS support
 - [ ] basic application for the OS
 
 ### Planned
 
 - [ ] Process scheduler (round-robin)
-- [ ] NovexFS — custom filesystem
 - [ ] ELF binary loader
 - [ ] Networking stack (TCP/IP)
 - [ ] Package manager

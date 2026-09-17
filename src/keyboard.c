@@ -8,6 +8,7 @@
 #include "desktop.h"
 #include "io.h"
 #include "isr.h"
+#include "python.h"
 #include "shell.h"
 
 /* ------- Scancode Set 1 → ASCII: QWERTY ------- */
@@ -55,16 +56,35 @@ static int shift_held = 0;
 static volatile char getchar_buffer = 0;
 static volatile bool getchar_waiting = false;
 
+/* The ISO (102-key) key next to the left Shift is not represented in the
+ * legacy tables above.  It is the dependable source of < and > on AZERTY
+ * keyboards, and must also work while Python input() is waiting. */
+static char keyboard_translate(uint8_t scancode) {
+  if (scancode == 0x56)
+    return shift_held ? '>' : '<';
+  return shift_held ? active_layout_shift[scancode] : active_layout[scancode];
+}
+
 char keyboard_getchar(void) {
+  serial_print("[KBD] Entering keyboard_getchar()\r\n");
   getchar_waiting = true;
   while (getchar_buffer == 0) {
+    if (desktop_is_active()) {
+      desktop_loop_iteration();
+    }
     /* Enable interrupts and wait for next interrupt */
     __asm__ volatile("sti; hlt");
   }
   char c = getchar_buffer;
   getchar_buffer = 0;
   getchar_waiting = false;
+  serial_print("[KBD] Exiting keyboard_getchar()\r\n");
   return c;
+}
+
+void keyboard_cancel_getchar(void) {
+  if (getchar_waiting)
+    getchar_buffer = 27; /* ESC: a neutral cancellation key for callers */
 }
 
 void keyboard_set_layout(int layout) {
@@ -109,6 +129,25 @@ void keyboard_handler(void) {
     return;
   }
 
+  /* When keyboard_getchar() is waiting, route ALL key events directly to getchar_buffer */
+  if (getchar_waiting) {
+    char c = keyboard_translate(scancode);
+    if (scancode == 0x01)
+      c = 27; /* ESC */
+    else if (scancode == 0x1C)
+      c = '\n'; /* Enter */
+    else if (scancode == 0x0E)
+      c = '\b'; /* Backspace */
+
+    if (c != 0) {
+      getchar_buffer = c;
+    } else {
+      /* Any other key should still wake up getchar to avoid deadlock */
+      getchar_buffer = ' ';
+    }
+    return;
+  }
+
   /* ESC key */
   if (scancode == 0x01) {
     shell_input(27);
@@ -143,11 +182,9 @@ void keyboard_handler(void) {
     return;
   }
 
-  char c = shift_held ? active_layout_shift[scancode] : active_layout[scancode];
+  char c = keyboard_translate(scancode);
   if (c != 0) {
-    if (getchar_waiting) {
-      getchar_buffer = c;
-    } else if (desktop_is_active()) {
+    if (desktop_is_active()) {
       desktop_handle_key(c);
     } else {
       shell_input(c);

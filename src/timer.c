@@ -52,7 +52,11 @@ uint32_t timer_get_uptime_seconds(void) {
 
 void timer_sleep(uint32_t ticks) {
   uint32_t target = system_ticks + ticks;
-  while (system_ticks < target) {
-    __asm__ volatile("hlt");
+  /* Python commands are executed from the keyboard IRQ.  A plain HLT there
+   * has interrupts masked and would never wake up; explicitly enable them
+   * before sleeping.  Signed subtraction also keeps the wait correct across
+   * the 32-bit tick counter wrap-around. */
+  while ((int32_t)(system_ticks - target) < 0) {
+    __asm__ volatile("sti; hlt");
   }
 }

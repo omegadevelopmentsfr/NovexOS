@@ -57,6 +57,15 @@ void gui_window_init(gui_window_t *win, int32_t x, int32_t y, int32_t w,
 /* Render a window frame (title bar + border + background) */
 void gui_window_render(const gui_window_t *win);
 
+/* Small reusable window-manager helpers.  Applications keep their own
+ * contents, while these functions provide the common chrome and pointer
+ * behaviour (close button, title-bar dragging and screen bounds). */
+int gui_window_hit_close(const gui_window_t *win, int32_t x, int32_t y);
+int gui_window_begin_drag(gui_window_t *win, int32_t x, int32_t y);
+void gui_window_update_drag(gui_window_t *win, int32_t x, int32_t y,
+                            int32_t screen_w, int32_t screen_h);
+void gui_window_end_drag(gui_window_t *win);
+
 /* Render a button-like widget */
 void gui_draw_button(int32_t x, int32_t y, int32_t w, int32_t h,
                      const char *label, uint32_t bg, uint32_t fg);

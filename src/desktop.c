@@ -1,41 +1,13 @@
-/*
- * NovexOS - desktop.c
- * NovexDE — Graphical Desktop Environment.
- *
- * Rendering strategy — dirty-rect optimisation
- * --------------------------------------------
- * A full redraw (background + windows + taskbar) is issued only when the
- * scene actually changes:
- *   - First frame
- *   - Terminal window shown/hidden or dragged
- *   - Power menu opened/closed
- *   - Terminal buffer written to (keystroke / command output)
- *   - Text cursor blink state toggles (every 500 ms)
- *
- * On all other frames (typically mouse movement at 60 fps):
- *   1. Restore the 32×32 area that was saved before the previous cursor draw.
- *   2. Optionally update only the clock region if the second ticked.
- *   3. Save the new cursor area and draw the cursor.
- *   4. Swap buffers.
- *
- * This reduces per-frame work from ~6 MB of memory ops (full blit + redraw)
- * to ~6 KB (two 32×32 pixel save/restore) on idle mouse-move frames.
- *
- * CPU idle optimisation
- * ---------------------
- * The frame-rate throttle loop now executes HLT instead of spinning.
- * The CPU sleeps until the next PIT interrupt (~1 ms) then re-checks the
- * tick counter.  Reduces idle CPU usage from ~100% to near 0%.
- */
-
 #include "desktop.h"
 #include "assets.h"
 #include "fb.h"
 #include "font.h"
 #include "gui.h"
+#include "installer_app.h"
 #include "io.h"
 #include "lang.h"
 #include "mouse.h"
+#include "python.h"
 #include "string.h"
 #include "timer.h"
 #include "vbe.h"
@@ -43,6 +15,11 @@
 /* External terminal functions for text-mode fallback */
 extern void terminal_writestring(const char *s);
 extern void terminal_set_color(uint8_t color);
+
+/* Returns non-zero if the kernel was entered via the Stage2 disk loader
+ * (i.e. we're running from the installed disk) rather than booted live
+ * from the ISO via GRUB. Used to hide the Install app once installed. */
+extern int system_booted_from_disk(void);
 
 /* =========================================================================
  * Desktop state
@@ -86,8 +63,11 @@ static int cursor_saved = 0;
 /* Scene-change tracking */
 static int full_dirty = 1; /* force first-frame full redraw */
 static int last_term_visible = -1;
+static int last_inst_visible = -1;
 static int32_t last_win_x = -1;
 static int32_t last_win_y = -1;
+static int32_t last_inst_x = -1;
+static int32_t last_inst_y = -1;
 static int last_power_menu = -1;
 static int last_blink_state = -1;
 static uint32_t last_clock_secs = (uint32_t)-1;
@@ -185,7 +165,7 @@ void desktop_print_welcome(void) {
     while (*p)
       term_putchar(*p++);
   }
-  const char *info = "\n NovexOS v0.7.2 - Bare Metal Monolithic Kernel\n\n";
+  const char *info = "\n NovexOS v0.8.0 - Bare Metal Monolithic Kernel\n\n";
   while (*info)
     term_putchar(*info++);
 }
@@ -249,6 +229,13 @@ static void render_taskbar(void) {
                   term_window.visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
                   COLOR_TEXT_WHITE);
 
+  if (!system_booted_from_disk()) {
+    gui_window_t *iw = installer_app_get_window();
+    gui_draw_button(194, ty + 6, 90, 28, "Install",
+                    iw->visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
+                    COLOR_TEXT_WHITE);
+  }
+
   if (show_power_menu) {
     int32_t menu_w = 120, menu_h = 60;
     int32_t menu_x = 6, menu_y = ty - menu_h - 4;
@@ -270,14 +257,9 @@ static void render_taskbar(void) {
   (void)idx;
 }
 
-/*
- * render_clock_only — partial update: erase + redraw only the clock area.
- * Called on non-dirty frames when the second ticks.
- */
 static void render_clock_only(void) {
   uint32_t h = fb_get_height();
   int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
-  /* Clock occupies at most 8 chars: "HH:MM:SS" */
   int32_t cw = 8 * FONT_WIDTH + 4;
   fb_fill_rect(clock_x_pos - 2, ty + 4, cw, TASKBAR_HEIGHT - 8, COLOR_TASKBAR);
   char time_buf[32];
@@ -308,7 +290,6 @@ static void render_terminal_content(void) {
     }
   }
 
-  /* Blinking text cursor */
   uint32_t ticks = timer_get_ticks();
   if ((ticks / 500) % 2 == 0) {
     int32_t cur_px = cx + term_cx * FONT_WIDTH;
@@ -320,17 +301,9 @@ static void render_terminal_content(void) {
 static void render_cursor(int32_t mx, int32_t my) {
   const sprite_t *cur = assets_get_cursor(CURSOR_POINTER);
   fb_draw_sprite_alpha(mx - cur->hotspot_x, my - cur->hotspot_y, cur->pixels,
-                       cur->width, cur->height, COLOR_CURSOR, /* white fill  */
-                       0xFF000000u /* black outline */
-  );
+                       cur->width, cur->height, COLOR_CURSOR, 0xFF000000u);
 }
 
-/* =========================================================================
- * Cursor sprite save / restore
- * Saves the 32×32 backbuffer region that the cursor will overwrite, and
- * restores it before the next cursor draw.  This lets partial-update frames
- * skip the 3 MB background blit entirely.
- * ========================================================================= */
 static void cursor_save_area(int32_t mx, int32_t my) {
   const sprite_t *cur = assets_get_cursor(CURSOR_POINTER);
   uint32_t sw = (cur->width < CURSOR_SAVE_MAX) ? cur->width : CURSOR_SAVE_MAX;
@@ -397,7 +370,6 @@ void desktop_init(void) {
   fb_init(vbe_get_framebuffer(), w, h, vbe_get_pitch());
   mouse_set_bounds((int32_t)w, (int32_t)h);
 
-  /* Pre-compute clock x position (8 chars "HH:MM:SS") */
   clock_x_pos = (int32_t)(fb_get_width()) - 8 * FONT_WIDTH - 12;
 
   int32_t win_w = 660, win_h = 480;
@@ -407,81 +379,86 @@ void desktop_init(void) {
                   get_string(STR_CONSOLE_BTN));
   term_window.visible = 0;
 
+  installer_app_init();
+
   term_clear();
   desktop_print_welcome();
   de_active = 1;
 }
 
-void desktop_run(void) {
+static uint32_t last_tick = 0;
+static uint8_t last_buttons = 0;
+
+void desktop_loop_iteration(void) {
   if (!de_active)
     return;
 
-  serial_print("[DE] Entering desktop_run()...\r\n");
+  uint32_t now = timer_get_ticks();
+  if (now - last_tick < 16 && !full_dirty) {
+    return;
+  }
+  last_tick = now;
 
-  uint32_t last_tick = 0;
-  static uint8_t last_buttons = 0;
-  uint8_t loop_count = 0;
+  desktop_check_editor_closed();
 
-  while (de_active) {
-    uint32_t now = timer_get_ticks();
+  int32_t mx = mouse_get_x();
+  int32_t my = mouse_get_y();
+  uint8_t buttons = mouse_get_buttons();
+  uint32_t h = fb_get_height();
 
-    if (loop_count == 0) {
-      serial_print("[DE] First loop iteration. Ticks: ");
-      serial_print_hex(now);
-      serial_print("\r\n");
-      loop_count = 1;
-    }
+  if (buttons & 0x01) {
+    if (!(last_buttons & 0x01)) {
+      int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
+      if (show_power_menu) {
+        int32_t menu_w = 120, menu_h = 60;
+        int32_t menu_x = 6, menu_y = ty - menu_h - 4;
+        if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y &&
+            my <= menu_y + menu_h) {
+          if (my < menu_y + 30) {
+            reboot();
+          } else {
+            outw(0x604, 0x2000);
+            outw(0xB004, 0x2000);
+            __asm__ volatile("cli; hlt");
+          }
+        } else if (!(my >= ty && mx >= 6 && mx <= 96)) {
+          show_power_menu = 0;
+        }
+      }
 
-    /* Throttle to ~60 FPS.
-     * HLT suspends the CPU until the next interrupt (~1 ms PIT tick),
-     * eliminating the busy-spin that consumed 100% CPU. */
-    if (now - last_tick < 16) {
-      __asm__ volatile("hlt");
-      continue;
-    }
-
-    if (loop_count == 1) {
-      serial_print("[DE] Passed tick throttle. Rendering first frame...\r\n");
-      loop_count = 2;
-    }
-    last_tick = now;
-
-    /* --- Poll for editor-closed transition -------------------------------- */
-    desktop_check_editor_closed();
-
-    /* --- Mouse state ---------------------------------------------------- */
-    int32_t mx = mouse_get_x();
-    int32_t my = mouse_get_y();
-    uint8_t buttons = mouse_get_buttons();
-    uint32_t h = fb_get_height();
-
-    /* --- Mouse interaction (modifies scene state for next render) -------- */
-    if (buttons & 0x01) {           /* left button pressed */
-      if (!(last_buttons & 0x01)) { /* just clicked */
-        int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
-        if (show_power_menu) {
-          int32_t menu_w = 120, menu_h = 60;
-          int32_t menu_x = 6, menu_y = ty - menu_h - 4;
-          if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y &&
-              my <= menu_y + menu_h) {
-            if (my < menu_y + 30) {
-              reboot();
-            } else {
-              outw(0x604, 0x2000);
-              outw(0xB004, 0x2000);
-              __asm__ volatile("cli; hlt");
+      if (my >= ty) {
+        if (mx >= 6 && mx <= 96 && my >= ty + 6 && my <= ty + 34)
+          show_power_menu = !show_power_menu;
+        else if (mx >= 100 && mx <= 190 && my >= ty + 6 && my <= ty + 34)
+          term_window.visible = !term_window.visible;
+        else if (mx >= 194 && mx <= 284 && my >= ty + 6 && my <= ty + 34 &&
+                 !system_booted_from_disk()) {
+          gui_window_t *iw = installer_app_get_window();
+          iw->visible = !iw->visible;
+        }
+      } else {
+        /* Turtle is a regular desktop window and therefore gets first pick
+         * of pointer input while it is visible. */
+        if (python_turtle_pointer_down(mx, my)) {
+          /* consumed by turtle window manager */
+        } else {
+        /* Try installer window click first */
+        gui_window_t *iw = installer_app_get_window();
+        if (iw->visible && !show_power_menu) {
+          if (installer_app_click(mx, my)) {
+            /* consumed by installer */
+          } else {
+            /* Check installer titlebar drag */
+            gui_rect_t itb = {iw->bounds.x, iw->bounds.y, iw->bounds.w,
+                              TITLEBAR_HEIGHT};
+            if (gui_point_in_rect(mx, my, &itb)) {
+              iw->dragging = 1;
+              iw->drag_offset_x = mx - iw->bounds.x;
+              iw->drag_offset_y = my - iw->bounds.y;
             }
-          } else if (!(my >= ty && mx >= 6 && mx <= 96)) {
-            show_power_menu = 0;
           }
         }
-
-        if (my >= ty) {
-          if (mx >= 6 && mx <= 96 && my >= ty + 6 && my <= ty + 34)
-            show_power_menu = !show_power_menu;
-          else if (mx >= 100 && mx <= 190 && my >= ty + 6 && my <= ty + 34)
-            term_window.visible = !term_window.visible;
-        } else if (term_window.visible && !show_power_menu) {
+        if (term_window.visible && !show_power_menu) {
           gui_rect_t titlebar = {term_window.bounds.x, term_window.bounds.y,
                                  term_window.bounds.w, TITLEBAR_HEIGHT};
           if (gui_point_in_rect(mx, my, &titlebar)) {
@@ -497,66 +474,84 @@ void desktop_run(void) {
             }
           }
         }
-      }
-      if (term_window.dragging && term_window.visible) {
-        term_window.bounds.x = mx - term_window.drag_offset_x;
-        term_window.bounds.y = my - term_window.drag_offset_y;
-      }
-    } else {
-      term_window.dragging = 0;
-    }
-    last_buttons = buttons;
-
-    /* --- Dirty check ---------------------------------------------------- */
-    uint32_t ticks = timer_get_ticks();
-    int blink_state = (int)((ticks / 500) % 2);
-
-    int need_full =
-        full_dirty || (term_window.visible != last_term_visible) ||
-        (term_window.visible && term_window.bounds.x != last_win_x) ||
-        (term_window.visible && term_window.bounds.y != last_win_y) ||
-        (show_power_menu != last_power_menu) ||
-        (term_window.visible && term_content_dirty) ||
-        (term_window.visible && blink_state != last_blink_state);
-
-    /* --- Render --------------------------------------------------------- */
-    if (need_full) {
-      /* Full scene redraw */
-      render_wallpaper();
-      if (term_window.visible) {
-        gui_window_render(&term_window);
-        render_terminal_content();
-      }
-      render_taskbar();
-
-      /* Update tracking state */
-      last_term_visible = term_window.visible;
-      last_win_x = term_window.bounds.x;
-      last_win_y = term_window.bounds.y;
-      last_power_menu = show_power_menu;
-      last_blink_state = blink_state;
-      last_clock_secs = timer_get_uptime_seconds();
-      term_content_dirty = 0;
-      full_dirty = 0;
-      cursor_saved = 0; /* saved area is stale after full redraw */
-    } else {
-      /* Partial update: restore previous cursor area */
-      cursor_restore_area();
-
-      /* Update clock region if the second changed */
-      uint32_t cur_secs = timer_get_uptime_seconds();
-      if (cur_secs != last_clock_secs) {
-        render_clock_only();
-        last_clock_secs = cur_secs;
+        }
       }
     }
+    python_turtle_pointer_move(mx, my);
+    if (term_window.dragging && term_window.visible) {
+      term_window.bounds.x = mx - term_window.drag_offset_x;
+      term_window.bounds.y = my - term_window.drag_offset_y;
+    }
+    gui_window_t *iw2 = installer_app_get_window();
+    if (iw2->dragging && iw2->visible) {
+      iw2->bounds.x = mx - iw2->drag_offset_x;
+      iw2->bounds.y = my - iw2->drag_offset_y;
+    }
+  } else {
+    python_turtle_pointer_up();
+    term_window.dragging = 0;
+    gui_window_t *iw3 = installer_app_get_window();
+    iw3->dragging = 0;
+  }
+  last_buttons = buttons;
 
-    /* Always: save the area under the new cursor position, draw cursor */
-    cursor_save_area(mx, my);
-    render_cursor(mx, my);
+  uint32_t ticks = timer_get_ticks();
+  int blink_state = (int)((ticks / 500) % 2);
 
-    /* Swap back-buffer to screen */
-    fb_swap();
+  gui_window_t *iwv = installer_app_get_window();
+  int need_full = full_dirty || (term_window.visible != last_term_visible) ||
+                  (term_window.visible && term_window.bounds.x != last_win_x) ||
+                  (term_window.visible && term_window.bounds.y != last_win_y) ||
+                  (iwv->visible != last_inst_visible) ||
+                  (iwv->visible && iwv->bounds.x != last_inst_x) ||
+                  (iwv->visible && iwv->bounds.y != last_inst_y) ||
+                  (iwv->visible) || /* installer always redraws when visible */
+                  (show_power_menu != last_power_menu) ||
+                  (term_window.visible && term_content_dirty) ||
+                  (term_window.visible && blink_state != last_blink_state);
+
+  if (need_full) {
+    render_wallpaper();
+    if (term_window.visible) {
+      gui_window_render(&term_window);
+      render_terminal_content();
+    }
+    installer_app_render();
+    python_turtle_render();
+    render_taskbar();
+
+    last_term_visible = term_window.visible;
+    last_inst_visible = iwv->visible;
+    last_win_x = term_window.bounds.x;
+    last_win_y = term_window.bounds.y;
+    last_inst_x = iwv->bounds.x;
+    last_inst_y = iwv->bounds.y;
+    last_power_menu = show_power_menu;
+    last_blink_state = blink_state;
+    last_clock_secs = timer_get_uptime_seconds();
+    term_content_dirty = 0;
+    full_dirty = 0;
+    cursor_saved = 0;
+  } else {
+    cursor_restore_area();
+    uint32_t cur_secs = timer_get_uptime_seconds();
+    if (cur_secs != last_clock_secs) {
+      render_clock_only();
+      last_clock_secs = cur_secs;
+    }
+  }
+
+  cursor_save_area(mx, my);
+  render_cursor(mx, my);
+  fb_swap();
+}
+
+void desktop_run(void) {
+  if (!de_active)
+    return;
+  serial_print("[DE] Starting desktop_run() loop...\r\n");
+  while (de_active) {
+    desktop_loop_iteration();
   }
 }
 
@@ -570,3 +565,12 @@ void desktop_handle_key(char c) {
 }
 
 int desktop_is_active(void) { return de_active; }
+
+void desktop_request_redraw(void) { full_dirty = 1; }
+
+void desktop_present_now(void) {
+  if (!de_active)
+    return;
+  full_dirty = 1;
+  desktop_loop_iteration();
+}

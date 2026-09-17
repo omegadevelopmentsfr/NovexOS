@@ -37,6 +37,9 @@ const char *ramfs_read(const char *name, uint32_t *out_size);
 /* Delete a file. Returns 0 on success, -1 if not found. */
 int ramfs_delete(const char *name);
 
+/* Check if a name refers to a directory entry. Returns 1/0. */
+int ramfs_is_dir(const char *name);
+
 /* List all files. Calls callback(name, size, is_dir) for each file. */
 void ramfs_list(void (*callback)(const char *name, uint32_t size, bool is_dir));
 

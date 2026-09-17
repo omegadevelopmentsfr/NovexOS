@@ -23,16 +23,25 @@ SECTIONS
     .text : ALIGN(4096)
     {
         *(.text)
+        *(.text.*)
     }
 
     .rodata : ALIGN(4096)
     {
         *(.rodata)
+        *(.rodata.*)
+        *(.lrodata)
+        *(.lrodata.*)
     }
 
     .data : ALIGN(4096)
     {
         *(.data)
+        *(.data.*)
+        *(.ldata)
+        *(.ldata.*)
+        *(.got)
+        *(.got.plt)
     }
 
     /* * _edata marque la fin des données initialisées. 
@@ -45,6 +54,9 @@ SECTIONS
         _sbss = .;
         *(COMMON)
         *(.bss)
+        *(.bss.*)
+        *(.lbss)
+        *(.lbss.*)
         . = ALIGN(4096);
         _ebss = .;
     }

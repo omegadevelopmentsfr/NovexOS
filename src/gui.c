@@ -63,6 +63,40 @@ void gui_window_render(const gui_window_t *win) {
   fb_draw_char(close_x + 4, close_y, 'x', COLOR_TEXT_WHITE, COLOR_WIN_CLOSE);
 }
 
+int gui_window_hit_close(const gui_window_t *win, int32_t px, int32_t py) {
+  gui_rect_t close = {win->bounds.x + win->bounds.w - 22,
+                      win->bounds.y + 6, 16, 16};
+  return win->visible && gui_point_in_rect(px, py, &close);
+}
+
+int gui_window_begin_drag(gui_window_t *win, int32_t px, int32_t py) {
+  gui_rect_t titlebar = {win->bounds.x, win->bounds.y, win->bounds.w,
+                         TITLEBAR_HEIGHT};
+  if (!win->visible || !gui_point_in_rect(px, py, &titlebar) ||
+      gui_window_hit_close(win, px, py))
+    return 0;
+  win->dragging = 1;
+  win->drag_offset_x = px - win->bounds.x;
+  win->drag_offset_y = py - win->bounds.y;
+  return 1;
+}
+
+void gui_window_update_drag(gui_window_t *win, int32_t px, int32_t py,
+                            int32_t screen_w, int32_t screen_h) {
+  if (!win->dragging || !win->visible)
+    return;
+  win->bounds.x = px - win->drag_offset_x;
+  win->bounds.y = py - win->drag_offset_y;
+  /* Keep a title-bar area accessible, including on smaller resolutions. */
+  if (win->bounds.x < 0) win->bounds.x = 0;
+  if (win->bounds.y < 0) win->bounds.y = 0;
+  if (win->bounds.x > screen_w - 48) win->bounds.x = screen_w - 48;
+  if (win->bounds.y > screen_h - TITLEBAR_HEIGHT)
+    win->bounds.y = screen_h - TITLEBAR_HEIGHT;
+}
+
+void gui_window_end_drag(gui_window_t *win) { win->dragging = 0; }
+
 void gui_draw_button(int32_t x, int32_t y, int32_t w, int32_t h,
                      const char *label, uint32_t bg, uint32_t fg) {
   fb_fill_rect(x, y, w, h, bg);

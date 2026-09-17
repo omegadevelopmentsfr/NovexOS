@@ -26,6 +26,7 @@
 #include "vfs.h"
 
 int chosen_res_id = 3;
+int system_booted_from_disk(void);
 
 /* ------- VGA constants ------- */
 #define VGA_WIDTH 80
@@ -201,7 +202,70 @@ static void show_banner(void) {
   terminal_writestring(" |_| \\_|\\___/ \\_/ \\___/_/\\_\\\\____/|_____/\n");
 }
 
+static int load_saved_settings(void) {
+  uint8_t buf[512];
+  memset(buf, 0, sizeof(buf));
+  int len = fat32_read_file("SYSTEM/SETTINGS.DAT", buf, sizeof(buf) - 1);
+  if (len <= 0)
+    len = fat32_read_file("SETTINGS.DAT", buf, sizeof(buf) - 1);
+  if (len <= 0)
+    return 0;
+  buf[len] = '\0';
+
+  char *p = (char *)buf;
+  while (*p) {
+    if (strncmp(p, "LANG=", 5) == 0) {
+      int val = p[5] - '0';
+      if (val >= 0 && val <= 1)
+        lang_set(val);
+    } else if (strncmp(p, "KBD=", 4) == 0) {
+      int val = p[4] - '0';
+      if (val >= 0 && val <= 1)
+        keyboard_set_layout(val);
+    } else if (strncmp(p, "RES=", 4) == 0) {
+      int val = p[4] - '0';
+      if (val >= 1 && val <= 3)
+        chosen_res_id = val;
+    }
+    while (*p && *p != '\n')
+      p++;
+    if (*p == '\n')
+      p++;
+  }
+  return 1;
+}
+
+static void start_shell_and_desktop(void) {
+  terminal_clear();
+  show_banner();
+
+  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+  terminal_writestring("\n NovexOS v0.8.0 - Bare Metal Monolithic Kernel\n");
+
+  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+  terminal_writestring(get_string(STR_BOOT_COMPLETE));
+
+  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+  shell_init();
+
+  /* Automatically launch the desktop environment */
+  shell_input('s');
+  shell_input('t');
+  shell_input('a');
+  shell_input('r');
+  shell_input('t');
+  shell_input('d');
+  shell_input('e');
+  shell_input('\n');
+}
+
 static void interactive_boot_sequence(void) {
+  int has_settings = load_saved_settings();
+  if (system_booted_from_disk() || has_settings) {
+    start_shell_and_desktop();
+    return;
+  }
+
   terminal_clear();
   terminal_set_color(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
   terminal_writestring("=== NovexOS First Boot ===\n\n");
@@ -259,31 +323,40 @@ static void interactive_boot_sequence(void) {
     }
   }
 
-  terminal_clear();
-  show_banner();
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  terminal_writestring("\n NovexOS v0.7.2 - Bare Metal Monolithic Kernel\n");
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-  terminal_writestring(get_string(STR_BOOT_COMPLETE));
-
-  terminal_set_color(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-  shell_init();
-
-  /* Automatically launch the desktop environment */
-  shell_input('s');
-  shell_input('t');
-  shell_input('a');
-  shell_input('r');
-  shell_input('t');
-  shell_input('d');
-  shell_input('e');
-  shell_input('\n');
+  start_shell_and_desktop();
 }
+
+static void fpu_sse_init(void) {
+  /* 1. Enable FPU (x87) */
+  size_t cr0;
+  __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+  cr0 &= ~(1 << 2); /* Clear EM (Emulation) */
+  cr0 |= (1 << 1);  /* Set MP (Monitor Coprocessor) */
+  cr0 |= (1 << 5);  /* Set NE (Numeric Error) */
+  __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
+  __asm__ volatile("fninit");
+
+  /* 2. Enable SSE */
+  size_t cr4;
+  __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+  cr4 |= (1 << 9);  /* Set OSFXSR (FXSAVE/FXRSTOR support) */
+  cr4 |= (1 << 10); /* Set OSXMMEXCPT (Unmasked Exception Support) */
+  __asm__ volatile("mov %0, %%cr4" : : "r"(cr4));
+}
+
+/* Set when the kernel was entered via our own Stage2 disk loader (which
+ * passes a fixed, non-multiboot pointer at 0x9500) rather than via
+ * GRUB/multiboot from the live ISO (which passes a real multiboot_info
+ * structure address). Used to hide the Install app once the OS is
+ * actually running from the installed disk. */
+static int g_booted_from_installed_disk = 0;
+
+int system_booted_from_disk(void) { return g_booted_from_installed_disk; }
 
 /* ------- Kernel entry point ------- */
 void kernel_main(struct multiboot_info *mbi) {
+  g_booted_from_installed_disk = ((uintptr_t)mbi == 0x9500);
+
   /* Safety check: Write kernel start marker to VGA */
   volatile uint16_t *vga = (volatile uint16_t *)0xB8000;
   vga[0] = 0x2F4B; /* 'K' in green */
@@ -314,6 +387,11 @@ void kernel_main(struct multiboot_info *mbi) {
   isr_init();
   terminal_writestring("ISRs OK\n");
 
+  /* 3b. FPU & SSE — essential for floating point */
+  terminal_writestring("Initializing FPU/SSE...\n");
+  fpu_sse_init();
+  terminal_writestring("FPU/SSE OK\n");
+
   /* 4. PIT timer at 1000 Hz for 60fps rendering */
   terminal_writestring("Initializing Timer (1000Hz)...\n");
   timer_init(1000);
@@ -333,6 +411,75 @@ void kernel_main(struct multiboot_info *mbi) {
   terminal_writestring("Initializing RAMFS...\n");
   ramfs_init();
   terminal_writestring("RAMFS OK\n");
+  /* Embed installer.py so 'python installer.py' works from RAM */
+  {
+    const char *installer_py =
+        "import novex\n"
+        "print(\"\")\n"
+        "print(\"╔════════════════════════════════════╗\")\n"
+        "print(\"║    NovexOS Installer  v1.0         ║\")\n"
+        "print(\"╚════════════════════════════════════╝\")\n"
+        "print(\"\")\n"
+        "info = novex.disk_info()\n"
+        "print(\"Disk : \" + info)\n"
+        "print(\"\")\n"
+        "print(\"Format options:\")\n"
+        "print(\"  [1] FAT32  (recommended, native support)\")\n"
+        "print(\"  [2] ext4   (Linux compatible)\")\n"
+        "print(\"  [3] NTFS   (Windows compatible)\")\n"
+        "print(\"\")\n"
+        "fs_choice = input(\"Format [1/2/3]: \")\n"
+        "has_os = novex.has_existing_os()\n"
+        "if has_os == True:\n"
+        "  print(\"\")\n"
+        "  print(\"WARNING: An existing OS was detected on this disk.\")\n"
+        "  print(\"  [1] Full install  (erases everything)\")\n"
+        "  print(\"  [2] Dual-boot     (keeps existing OS)\")\n"
+        "  mode = input(\"Mode [1/2]: \")\n"
+        "else:\n"
+        "  mode = \"1\"\n"
+        "print(\"\")\n"
+        "if mode == \"2\":\n"
+        "  ex_sec = novex.existing_os_sectors()\n"
+        "  ex_mb = ex_sec / 2048\n"
+        "  print(\"Existing OS uses \" + str(int(ex_mb)) + \" MB.\")\n"
+        "  keep_str = input(\"Keep how many MB for it? \")\n"
+        "  keep_mb = int(keep_str)\n"
+        "  shrink_sec = keep_mb * 2048\n"
+        "  confirm = input(\"Shrink + install? (yes): \")\n"
+        "  if confirm == \"yes\":\n"
+        "    if fs_choice == \"2\":\n"
+        "      r = novex.install_dualboot(\"ext4\", shrink_sec)\n"
+        "    elif fs_choice == \"3\":\n"
+        "      r = novex.install_dualboot(\"ntfs\", shrink_sec)\n"
+        "    else:\n"
+        "      r = novex.install_dualboot(\"fat32\", shrink_sec)\n"
+        "  else:\n"
+        "    r = 0\n"
+        "    print(\"Installation cancelled.\")\n"
+        "else:\n"
+        "  confirm = input(\"ALL data will be erased. Confirm? (yes): \")\n"
+        "  if confirm == \"yes\":\n"
+        "    if fs_choice == \"2\":\n"
+        "      r = novex.install_ext4()\n"
+        "    elif fs_choice == \"3\":\n"
+        "      r = novex.install_ntfs()\n"
+        "    else:\n"
+        "      r = novex.install_fat32()\n"
+        "  else:\n"
+        "    r = 0\n"
+        "    print(\"Installation cancelled.\")\n"
+        "if r == 1:\n"
+        "  print(\"\")\n"
+        "  print(\"Installation successful!\")\n"
+        "  print(\"Remove the USB drive, then reboot.\")\n"
+        "  ans = input(\"Reboot now? (yes): \")\n"
+        "  if ans == \"yes\":\n"
+        "    novex.reboot()\n"
+        "else:\n"
+        "  print(\"Installation failed or was cancelled.\")\n";
+    ramfs_write("installer.py", installer_py, (uint32_t)strlen(installer_py));
+  }
 
   /* 8. ATA Disk Driver */
   terminal_writestring("Initializing ATA...\n");
@@ -368,7 +515,8 @@ void kernel_main(struct multiboot_info *mbi) {
       desktop_run();
       /* Once desktop exits, re-clear the screen to text mode */
       terminal_clear();
-      interactive_boot_sequence();
+      show_banner();
+      shell_init();
     }
     __asm__ volatile("hlt");
   }

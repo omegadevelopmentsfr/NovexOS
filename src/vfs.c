@@ -19,10 +19,6 @@ static fs_type_t detected_fs = FS_NONE;
 
 /* NTFS Basic Detection */
 static int ntfs_detect(void) {
-  /* DISABLED: Don't try to read ATA disk on USB multiboot systems */
-  return 0;
-
-  /* Original code (disabled for USB multiboot):
   uint32_t part_lba_start = fat32_get_part_lba_start();
 
   if (part_lba_start == 0)
@@ -39,7 +35,6 @@ static int ntfs_detect(void) {
   }
 
   return 0;
-  */
 }
 
 static void ntfs_init(void) {
@@ -63,10 +58,6 @@ static void ntfs_list_dir(const char *path) {
 
 /* ext4 Basic Detection */
 static int ext4_detect(void) {
-  /* DISABLED: Don't try to read ATA disk on USB multiboot systems */
-  return 0;
-
-  /* Original code (disabled for USB multiboot):
   uint32_t part_lba_start = fat32_get_part_lba_start();
 
   if (part_lba_start == 0)
@@ -81,7 +72,6 @@ static int ext4_detect(void) {
   }
 
   return 0;
-  */
 }
 
 static void ext4_init(void) {
@@ -145,13 +135,80 @@ int vfs_read_file(const char *filename, uint8_t *buffer, uint32_t max_len) {
   case FS_FAT32:
     return fat32_read_file(filename, buffer, max_len);
   case FS_NTFS:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_read_file(filename, buffer, max_len);
     return ntfs_read_file(filename, buffer, max_len);
   case FS_EXT4:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_read_file(filename, buffer, max_len);
     return ext4_read_file(filename, buffer, max_len);
-  case FS_RAMFS:
-    /* RAMFS doesn't implement file reading yet */
-    return -1;
+  case FS_RAMFS: {
+    uint32_t size = 0;
+    const char *d = ramfs_read(filename, &size);
+    if (!d)
+      return -1;
+    if (size > max_len)
+      size = max_len;
+    memcpy(buffer, d, size);
+    return (int)size;
+  }
   default:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_read_file(filename, buffer, max_len);
+    return -1;
+  }
+}
+
+int vfs_write_file(const char *filename, const uint8_t *buffer, uint32_t len) {
+  switch (detected_fs) {
+  case FS_FAT32:
+    return fat32_write_file(filename, (uint8_t *)buffer, len);
+  case FS_NTFS:
+  case FS_EXT4:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_write_file(filename, (uint8_t *)buffer, len);
+    return -1;
+  case FS_RAMFS:
+    return ramfs_write(filename, (const char *)buffer, len);
+  default:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_write_file(filename, (uint8_t *)buffer, len);
+    return -1;
+  }
+}
+
+int vfs_delete_file(const char *filename) {
+  switch (detected_fs) {
+  case FS_FAT32:
+    return fat32_delete(filename);
+  case FS_NTFS:
+  case FS_EXT4:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_delete(filename);
+    return -1;
+  case FS_RAMFS:
+    return ramfs_delete(filename);
+  default:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_delete(filename);
+    return -1;
+  }
+}
+
+int vfs_mkdir(const char *dirname) {
+  switch (detected_fs) {
+  case FS_FAT32:
+    return fat32_mkdir(dirname);
+  case FS_NTFS:
+  case FS_EXT4:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_mkdir(dirname);
+    return -1;
+  case FS_RAMFS:
+    return ramfs_mkdir(dirname);
+  default:
+    if (fat32_get_part_lba_start() != 0)
+      return fat32_mkdir(dirname);
     return -1;
   }
 }

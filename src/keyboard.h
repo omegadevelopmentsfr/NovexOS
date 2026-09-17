@@ -13,6 +13,9 @@ void keyboard_set_layout(int layout);
 int keyboard_is_layout_selected(void);
 char keyboard_getchar(void);
 
+/* Wake a blocking getchar() (used when a graphical window is closed). */
+void keyboard_cancel_getchar(void);
+
 #define KEY_UP ((char)0x80)
 #define KEY_DOWN ((char)0x81)
 #define KEY_LEFT ((char)0x82)
