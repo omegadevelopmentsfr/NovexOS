@@ -30,8 +30,8 @@ static const char *strings_fr[STR_MAX] = {
     "(1920x1080)\n",
     "Menu",
     "Console",
-    "Redemarrer",
-    "Eteindre",
+    "Redémarrer",
+    "Éteindre",
     "PIT OK\n",
     "Clavier OK\n",
     "Souris OK\n"};

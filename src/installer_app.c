@@ -42,16 +42,17 @@ static int inst_percent = 0; /* 0-100 visual progress bar */
 /* =========================================================================
  * Theme colours (consistent with NovexDE)
  * ========================================================================= */
-#define C_BG 0xFF1E1E2E         /* Window body */
-#define C_CARD 0xFF282840       /* Card/panel background */
-#define C_ACCENT 0xFF6C63FF     /* Purple accent */
-#define C_ACCENT_DIM 0xFF4B44CC /* Darker accent */
-#define C_GREEN 0xFF50FA7B      /* Success green */
-#define C_RED 0xFFFF5555        /* Error red */
-#define C_ORANGE 0xFFFFB86C     /* Warning orange */
+#define C_BG COLOR_WIN_BG            /* Window body */
+#define C_CARD COLOR_WIN_TITLE       /* Card/panel background */
+#define C_ACCENT COLOR_ACCENT        /* cyber-purple */
+#define C_ACCENT_DIM 0xFF4B44CC      /* Darker accent */
+#define C_GREEN COLOR_NEON_GREEN     /* cyber-green */
+#define C_RED COLOR_PINK             /* cyber-pink */
+#define C_ORANGE 0xFFFFB86C          /* Warning orange */
 #define C_WHITE 0xFFFFFFFF
-#define C_GRAY 0xFF888888
-#define C_DARK 0xFF16162A /* Dark card */
+#define C_GRAY COLOR_TEXT_GRAY
+#define C_DARK 0xFF0C0C14            /* Dark card */
+#define C_BORDER COLOR_WIN_BORDER
 
 /* =========================================================================
  * Helpers
@@ -110,19 +111,20 @@ static void draw_option(int32_t x, int32_t y, int32_t w, const char *label,
                         const char *desc, int selected) {
   uint32_t bg = selected ? C_ACCENT : C_CARD;
   uint32_t fg = C_WHITE;
-  fb_fill_rect(x, y, w, 44, bg);
-  fb_draw_rect(x, y, w, 44, selected ? C_ACCENT : 0xFF3A3A5C);
+  fb_fill_rrect_border(x, y, w, 44, 10, bg, selected ? COLOR_ACCENT_HOVER : C_BORDER);
 
   /* Radio circle */
-  int32_t cx2 = x + 16;
-  int32_t cy2 = y + 14;
-  fb_fill_rect(cx2, cy2, 12, 12, selected ? C_WHITE : C_GRAY);
+  int32_t cx2 = x + 22;
+  int32_t cy2 = y + 20;
+  fb_fill_circle(cx2, cy2, 7, selected ? C_WHITE : C_GRAY);
   if (!selected)
-    fb_fill_rect(cx2 + 2, cy2 + 2, 8, 8, bg);
+    fb_fill_circle(cx2, cy2, 5, bg);
+  else
+    fb_fill_circle(cx2, cy2, 3, C_ACCENT);
 
-  fb_draw_string(x + 36, y + 8, label, fg, bg);
+  fb_draw_string(x + 40, y + 6, label, fg, bg);
   if (desc && desc[0])
-    fb_draw_string(x + 36, y + 26, desc, selected ? 0xFFDDDDFF : C_GRAY, bg);
+    fb_draw_string(x + 40, y + 24, desc, selected ? 0xFFDDDDFF : C_GRAY, bg);
 }
 
 /* =========================================================================
@@ -135,7 +137,7 @@ static int32_t win_ch(void) { return inst_win.bounds.h - TITLEBAR_HEIGHT; }
 
 /* Horizontal separator line */
 static void draw_sep(int32_t y) {
-  fb_hline(win_cx() + 20, y, win_cw() - 40, 0xFF3A3A5C);
+  fb_fill_gradient_h(win_cx() + 20, y, win_cw() - 40, 1, C_BORDER, C_ACCENT_DIM);
 }
 
 /* Step indicator dots */
@@ -147,7 +149,7 @@ static void draw_steps(int32_t y) {
     uint32_t col = (i < inst_step)    ? C_GREEN
                    : (i == inst_step) ? C_ACCENT
                                       : C_GRAY;
-    fb_fill_rect(sx + i * 20, y, 12, 12, col);
+    fb_fill_circle(sx + i * 20 + 6, y + 6, (i == inst_step) ? 6 : 4, col);
   }
 }
 
@@ -165,8 +167,7 @@ static void render_step0(int32_t mx, int32_t my) {
   draw_sep(y + 44);
 
   /* Disk info card */
-  fb_fill_rect(x + 30, y + 56, w - 60, 80, C_CARD);
-  fb_draw_rect(x + 30, y + 56, w - 60, 80, 0xFF3A3A5C);
+  fb_fill_rrect_border(x + 30, y + 56, w - 60, 80, 10, C_CARD, C_BORDER);
 
   if (inst_probed && inst_disk.disk_found) {
     char mb_str[12];
@@ -213,8 +214,7 @@ static void render_step1(int32_t mx, int32_t my) {
                 "Keep existing OS, install alongside", inst_type == 1);
   } else {
     /* Grayed-out dual-boot option */
-    fb_fill_rect(x + 30, y + 114, w - 60, 44, C_DARK);
-    fb_draw_rect(x + 30, y + 114, w - 60, 44, 0xFF2A2A3C);
+    fb_fill_rrect_border(x + 30, y + 114, w - 60, 44, 10, C_DARK, C_BORDER);
     fb_draw_string(x + 66, y + 122, "Dual Boot", C_GRAY, C_DARK);
     fb_draw_string(x + 66, y + 140, "No existing OS detected", 0xFF555555,
                    C_DARK);
@@ -242,8 +242,7 @@ static void render_step2(int32_t mx, int32_t my) {
   /* NTFS is disabled: the current boot-area overlay overwrites the NTFS
    * VBR at sector 0, so the resulting partition isn't valid NTFS. Needs
    * a real separate boot partition to fix properly - not done yet. */
-  fb_fill_rect(x + 30, y + 168, w - 60, 44, C_DARK);
-  fb_draw_rect(x + 30, y + 168, w - 60, 44, 0xFF2A2A3C);
+  fb_fill_rrect_border(x + 30, y + 168, w - 60, 44, 10, C_DARK, C_BORDER);
   fb_draw_string(x + 66, y + 176, "NTFS", C_GRAY, C_DARK);
   fb_draw_string(x + 66, y + 194, "Not supported yet", 0xFF555555, C_DARK);
 
@@ -284,8 +283,7 @@ static void render_step3(int32_t mx, int32_t my) {
   int32_t bar_y = y + 110;
   int32_t bar_w = w - 60;
   int32_t bar_h = 30;
-  fb_fill_rect(bar_x, bar_y, bar_w, bar_h, C_CARD);
-  fb_draw_rect(bar_x, bar_y, bar_w, bar_h, 0xFF3A3A5C);
+  fb_fill_rrect_border(bar_x, bar_y, bar_w, bar_h, bar_h / 2, C_CARD, C_BORDER);
 
   /* Existing OS portion */
   int32_t existing_w = 0;
@@ -294,13 +292,14 @@ static void render_step3(int32_t mx, int32_t my) {
                            (uint64_t)inst_disk.total_sectors);
   if (existing_w > bar_w - 20)
     existing_w = bar_w - 20;
-  fb_fill_rect(bar_x + 1, bar_y + 1, existing_w, bar_h - 2, C_ORANGE);
+  fb_fill_rrect_ex(bar_x + 1, bar_y + 1, existing_w, bar_h - 2, (bar_h - 2) / 2,
+                   C_ORANGE, RR_TL | RR_BL);
   /* NovexOS portion */
-  fb_fill_rect(bar_x + 1 + existing_w, bar_y + 1, bar_w - 2 - existing_w,
-               bar_h - 2, C_ACCENT);
+  fb_fill_rrect_ex(bar_x + 1 + existing_w, bar_y + 1, bar_w - 2 - existing_w,
+                   bar_h - 2, (bar_h - 2) / 2, C_ACCENT, RR_TR | RR_BR);
 
   if (existing_w > 50)
-    fb_draw_string(bar_x + 6, bar_y + 8, "Existing", C_WHITE, C_ORANGE);
+    fb_draw_string(bar_x + 14, bar_y + 8, "Existing", C_WHITE, C_ORANGE);
   if (bar_w - existing_w > 60)
     fb_draw_string(bar_x + existing_w + 6, bar_y + 8, "NovexOS", C_WHITE,
                    C_ACCENT);
@@ -329,8 +328,7 @@ static void render_step4(int32_t mx, int32_t my) {
   draw_sep(y + 44);
 
   /* Summary card */
-  fb_fill_rect(x + 30, y + 56, w - 60, 110, C_CARD);
-  fb_draw_rect(x + 30, y + 56, w - 60, 110, 0xFF3A3A5C);
+  fb_fill_rrect_border(x + 30, y + 56, w - 60, 110, 10, C_CARD, C_BORDER);
 
   const char *type_str = inst_type == 0 ? "Full Disk" : "Dual Boot";
   const char *fs_str = inst_fs == 0 ? "FAT32" : inst_fs == 1 ? "ext4" : "NTFS";
@@ -396,14 +394,14 @@ static void render_step5(int32_t mx, int32_t my) {
   int32_t pbar_y = y + 230;
   int32_t pbar_h = 24;
 
-  fb_fill_rect(pbar_x, pbar_y, pbar_w, pbar_h, C_CARD);
-  fb_draw_rect(pbar_x, pbar_y, pbar_w, pbar_h, 0xFF3A3A5C);
+  fb_fill_rrect_border(pbar_x, pbar_y, pbar_w, pbar_h, pbar_h / 2, C_CARD, C_BORDER);
 
   int32_t fill_w = (int32_t)((uint32_t)pbar_w * (uint32_t)inst_percent / 100);
   if (fill_w > 0) {
     if (fill_w > pbar_w - 2)
       fill_w = pbar_w - 2;
-    fb_fill_rect(pbar_x + 1, pbar_y + 1, fill_w, pbar_h - 2, C_GREEN);
+    fb_fill_rrect(pbar_x + 1, pbar_y + 1, fill_w, pbar_h - 2, (pbar_h - 2) / 2,
+                  C_GREEN);
   }
 }
 

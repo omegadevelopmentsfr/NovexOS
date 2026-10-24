@@ -951,19 +951,26 @@ void installer_save_settings(void) {
   int pos = 0;
 
   /* LANG= */
-  buf[pos++] = 'L'; buf[pos++] = 'A'; buf[pos++] = 'N'; buf[pos++] = 'G';
+  buf[pos++] = 'L';
+  buf[pos++] = 'A';
+  buf[pos++] = 'N';
+  buf[pos++] = 'G';
   buf[pos++] = '=';
   buf[pos++] = '0' + (char)lang_get();
   buf[pos++] = '\n';
 
   /* KBD= */
-  buf[pos++] = 'K'; buf[pos++] = 'B'; buf[pos++] = 'D';
+  buf[pos++] = 'K';
+  buf[pos++] = 'B';
+  buf[pos++] = 'D';
   buf[pos++] = '=';
   buf[pos++] = '0' + (char)keyboard_get_layout();
   buf[pos++] = '\n';
 
   /* RES= */
-  buf[pos++] = 'R'; buf[pos++] = 'E'; buf[pos++] = 'S';
+  buf[pos++] = 'R';
+  buf[pos++] = 'E';
+  buf[pos++] = 'S';
   buf[pos++] = '=';
   buf[pos++] = '0' + (char)chosen_res_id;
   buf[pos++] = '\n';
@@ -1016,7 +1023,8 @@ static void installer_create_system_folder(void) {
 
   /* Copy the SETTINGS.DAT we just wrote to the root into SYSTEM/ too. */
   uint8_t settings_buf[512];
-  int slen = fat32_read_file("SETTINGS.DAT", settings_buf, sizeof(settings_buf));
+  int slen =
+      fat32_read_file("SETTINGS.DAT", settings_buf, sizeof(settings_buf));
   if (slen > 0) {
     fat32_write_file("SYSTEM/SETTINGS.DAT", settings_buf, (uint32_t)slen);
   }
@@ -1025,7 +1033,7 @@ static void installer_create_system_folder(void) {
   char info[160];
   int pos = 0;
   pos = installer_append_str(info, pos, "NAME=NovexOS\n");
-  pos = installer_append_str(info, pos, "VERSION=0.8.0\n");
+  pos = installer_append_str(info, pos, "VERSION=0.8.1\n");
   pos = installer_append_str(info, pos, "ARCH=x86_64\n");
   pos = installer_append_str(info, pos, "BUILD_DATE=" __DATE__ "\n");
   pos = installer_append_str(info, pos, "BUILD_TIME=" __TIME__ "\n");

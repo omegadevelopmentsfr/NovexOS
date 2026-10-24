@@ -92,11 +92,11 @@ static void cmd_help(void) {
 }
 
 static void cmd_uname(void) {
-  terminal_writestring("NovexOS v0.8.0 [x86_64] - FAT32 Support Enabled\n");
+  terminal_writestring("NovexOS v0.8.1 [x86_64] - FAT32 Support Enabled\n");
 }
 
 static void cmd_version(void) {
-  terminal_writestring("NovexOS version 0.8.0\n");
+  terminal_writestring("NovexOS version 0.8.1\n");
   terminal_writestring(
       "Features: 64-bit Long Mode, ATA LBA48 (PIO), FAT32, MBR\n");
 }
@@ -171,7 +171,8 @@ static void cmd_cd(const char *args) {
   /* Simple switching for now */
   if (strcmp(path, "ram:") == 0 || strcmp(path, "ram:/") == 0) {
     if (system_booted_from_disk()) {
-      terminal_writestring("Notice: System is booted from disk. RAM is read-only.\n");
+      terminal_writestring(
+          "Notice: System is booted from disk. RAM is read-only.\n");
     }
     strcpy(cwd, "ram:/");
   } else if (strcmp(path, "disk:") == 0 || strcmp(path, "disk:/") == 0) {
@@ -215,12 +216,13 @@ static void cmd_mkdir(const char *args) {
     if (fat32_mkdir(path) == 0) {
       terminal_writestring("Directory created on disk.\n");
     } else {
-      terminal_writestring(
-          "Could not create directory (already exists, disk full, or invalid name).\n");
+      terminal_writestring("Could not create directory (already exists, disk "
+                           "full, or invalid name).\n");
     }
   } else {
     if (system_booted_from_disk()) {
-      terminal_writestring("Error: RAM is read-only after installation. Use disk:/\n");
+      terminal_writestring(
+          "Error: RAM is read-only after installation. Use disk:/\n");
       return;
     }
     if (ramfs_mkdir(path) == 0) {
@@ -462,7 +464,7 @@ void shell_input(char c) {
     }
   } else {
     if (cmd_len < SHELL_MAX_CMD - 1) {
-      if (c >= ' ' && c <= '~') {
+      if ((c >= ' ' && c <= '~') || (unsigned char)c >= 0xA0) {
         cmd_buffer[cmd_len++] = c;
         terminal_putchar(c);
       }

@@ -71,4 +71,33 @@ void fb_draw_sprite_alpha(int32_t x, int32_t y, const uint32_t *pixels,
                           uint32_t w, uint32_t h, uint32_t fg_color,
                           uint32_t outline);
 
+
+/* Bold variant and text measurement (UTF-8 aware: counts characters). */
+int32_t fb_draw_string_bold(int32_t x, int32_t y, const char *str, uint32_t fg,
+                            uint32_t bg);
+int32_t fb_text_width(const char *str);
+
+/* ---- Modern primitives (alpha / rounded / shadow / gradient) ---- */
+#define RR_TL 1
+#define RR_TR 2
+#define RR_BL 4
+#define RR_BR 8
+#define RR_ALL 15
+void fb_blend_pixel(int32_t x, int32_t y, uint32_t argb);
+void fb_blend_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t argb);
+void fb_fill_rrect_ex(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r,
+                      uint32_t color, int corners);
+void fb_fill_rrect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r,
+                   uint32_t color);
+void fb_fill_rrect_border(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r,
+                          uint32_t fill, uint32_t border);
+void fb_fill_circle(int32_t cx, int32_t cy, int32_t rad, uint32_t color);
+void fb_draw_shadow(int32_t x, int32_t y, int32_t w, int32_t h, int32_t r,
+                    int32_t spread, int32_t off_y, uint32_t rgb, uint32_t max_a);
+void fb_fill_gradient_v(int32_t x, int32_t y, int32_t w, int32_t h,
+                        uint32_t c0, uint32_t c1);
+void fb_fill_gradient_h(int32_t x, int32_t y, int32_t w, int32_t h,
+                        uint32_t c0, uint32_t c1);
+void fb_draw_cyber_background(void);
+
 #endif /* FB_H */

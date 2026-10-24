@@ -5,6 +5,7 @@
  */
 
 #include "font.h"
+#include "font_aa.h"
 
 static const uint8_t font_data[96][16] = {
     /* 32: ' ' (space) */
@@ -302,4 +303,22 @@ const uint8_t *font_get_glyph(char c) {
   if (idx < 32 || idx > 127)
     idx = 32; /* Return space for out-of-range */
   return font_data[idx - 32];
+}
+
+/* Unicode -> Windows-1252 (the byte encoding used by the text cells). */
+static const uint16_t cp1252_hi[32] = {
+    0x20AC, 0, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030,
+    0x0160, 0x2039, 0x0152, 0, 0x017D, 0,      0,      0x2018, 0x2019, 0x201C,
+    0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,
+    0x017E, 0x0178};
+
+uint8_t font_unicode_to_cp1252(uint32_t cp) {
+  if (cp >= 0x20 && cp < 0x7F)
+    return (uint8_t)cp;
+  if (cp >= 0xA0 && cp <= 0xFF)
+    return (uint8_t)cp;
+  for (int i = 0; i < 32; i++)
+    if (cp1252_hi[i] && cp1252_hi[i] == cp)
+      return (uint8_t)(0x80 + i);
+  return '?';
 }

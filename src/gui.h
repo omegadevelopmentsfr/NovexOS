@@ -23,25 +23,31 @@ typedef struct {
   int32_t drag_offset_y;
 } gui_window_t;
 
-/* Color constants — NovexDE theme */
-#define COLOR_BG_TOP 0xFF1A1A2E    /* Deep navy (wallpaper gradient top) */
-#define COLOR_BG_BOTTOM 0xFF0F3460 /* Deep blue (wallpaper gradient bottom) */
-#define COLOR_TASKBAR 0xE0202040   /* Dark semi-transparent taskbar */
-#define COLOR_TASKBAR_TEXT 0xFFE0E0E0 /* Light gray text */
-#define COLOR_ACCENT 0xFF6C63FF       /* Purple/violet accent (NovexOS brand) */
-#define COLOR_ACCENT_HOVER 0xFF8A84FF /* Lighter accent on hover */
-#define COLOR_WIN_BG 0xFF1E1E2E       /* Window background */
-#define COLOR_WIN_TITLE 0xFF2D2D44    /* Window title bar */
-#define COLOR_WIN_BORDER 0xFF3A3A5C   /* Window border */
-#define COLOR_WIN_CLOSE 0xFFE06060    /* Close button (red) */
+/* Color constants — NovexDE theme (palette of the NovexOS website) */
+#define COLOR_BG_TOP 0xFF0A0A0F    /* cyber-black */
+#define COLOR_BG_BOTTOM 0xFF0E0B22 /* black with a violet tint */
+#define COLOR_TASKBAR 0xFF11111C   /* Floating dock */
+#define COLOR_TASKBAR_TEXT 0xFFE6E8F5
+#define COLOR_ACCENT 0xFF6C63FF       /* cyber-purple */
+#define COLOR_ACCENT_HOVER 0xFF8A84FF
+#define COLOR_CYAN 0xFF00D4FF         /* cyber-blue */
+#define COLOR_PINK 0xFFFF006E         /* cyber-pink */
+#define COLOR_NEON_GREEN 0xFF00FF9F   /* cyber-green */
+#define COLOR_WIN_BG 0xFF10101A       /* Window background */
+#define COLOR_WIN_TITLE 0xFF171726    /* Window title bar / cards */
+#define COLOR_WIN_BORDER 0xFF2A2850   /* Window border (purple-tinted) */
+#define COLOR_WIN_CLOSE 0xFFFF006E    /* Close button */
 #define COLOR_TEXT_WHITE 0xFFFFFFFF
-#define COLOR_TEXT_GREEN 0xFF50FA7B  /* Terminal green */
-#define COLOR_TEXT_CYAN 0xFF8BE9FD   /* Terminal cyan */
+#define COLOR_TEXT_GREEN 0xFF00FF9F  /* Terminal green */
+#define COLOR_TEXT_CYAN 0xFF00D4FF   /* Terminal cyan */
 #define COLOR_TEXT_YELLOW 0xFFF1FA8C /* Terminal yellow */
-#define COLOR_TEXT_GRAY 0xFF888888
-#define COLOR_TEXT_BLACK 0xFF000000
+#define COLOR_TEXT_GRAY 0xFF8A8DA6
+#define COLOR_TEXT_BLACK 0xFF0A0A0F
 #define COLOR_CURSOR 0xFFFFFFFF /* Mouse cursor color */
 #define COLOR_TRANSPARENT 0x00000000
+
+/* Corner radius of windows */
+#define WIN_RADIUS 10
 
 /* Taskbar dimensions */
 #define TASKBAR_HEIGHT 40

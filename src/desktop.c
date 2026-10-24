@@ -165,7 +165,7 @@ void desktop_print_welcome(void) {
     while (*p)
       term_putchar(*p++);
   }
-  const char *info = "\n NovexOS v0.8.0 - Bare Metal Monolithic Kernel\n\n";
+  const char *info = "\n NovexOS v0.8.1 - Bare Metal Monolithic Kernel\n\n";
   while (*info)
     term_putchar(*info++);
 }
@@ -209,44 +209,82 @@ static int format_clock(char *buf) {
  * Rendering helpers
  * ========================================================================= */
 
-static void render_wallpaper(void) {
-  const sprite_t *bg = assets_get_background();
-  fb_draw_background(bg->pixels, bg->width, bg->height);
+/* Dock layout (floating rounded taskbar) */
+#define BTN_Y_OFF 6
+#define BTN_W 90
+#define BTN_H 28
+#define BTN_X(i) (22 + (i) * 98)
+#define MENU_X 22
+#define MENU_W 120
+#define MENU_H 60
+
+/* Hover state: 1..3 = dock buttons, 11/12 = power-menu items, 0 = none */
+static int tb_hover = 0;
+static int last_tb_hover = -1;
+
+static int compute_hover(int32_t mx, int32_t my) {
+  int32_t ty = (int32_t)fb_get_height() - TASKBAR_HEIGHT;
+  if (show_power_menu) {
+    int32_t my0 = ty - MENU_H - 4;
+    if (mx >= MENU_X && mx < MENU_X + MENU_W && my >= my0 && my < my0 + MENU_H)
+      return (my < my0 + 30) ? 11 : 12;
+  }
+  if (my >= ty + BTN_Y_OFF && my <= ty + BTN_Y_OFF + BTN_H) {
+    for (int i = 0; i < 3; i++) {
+      if (i == 2 && system_booted_from_disk())
+        break;
+      if (mx >= BTN_X(i) && mx <= BTN_X(i) + BTN_W)
+        return 1 + i;
+    }
+  }
+  return 0;
 }
+
+static void render_wallpaper(void) { fb_draw_cyber_background(); }
 
 static void render_taskbar(void) {
   uint32_t w = fb_get_width();
   uint32_t h = fb_get_height();
   int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
+  int32_t pw = (int32_t)w - 16;
 
-  fb_fill_rect(0, ty, (int32_t)w, TASKBAR_HEIGHT, COLOR_TASKBAR);
-  fb_hline(0, ty, (int32_t)w, COLOR_ACCENT);
+  /* Floating pill-shaped dock */
+  fb_draw_shadow(8, ty + 2, pw, 36, 18, 8, 0, 0x000000, 120);
+  fb_fill_rrect_border(8, ty + 2, pw, 36, 18, COLOR_TASKBAR, COLOR_WIN_BORDER);
 
-  gui_draw_button(6, ty + 6, 90, 28, get_string(STR_DESKTOP_BTN),
-                  show_power_menu ? COLOR_WIN_TITLE : COLOR_TASKBAR,
-                  COLOR_TEXT_WHITE);
-  gui_draw_button(100, ty + 6, 90, 28, get_string(STR_CONSOLE_BTN),
-                  term_window.visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
-                  COLOR_TEXT_WHITE);
+  gui_draw_button(
+      BTN_X(0), ty + BTN_Y_OFF, BTN_W, BTN_H, get_string(STR_DESKTOP_BTN),
+      show_power_menu ? COLOR_ACCENT
+                      : (tb_hover == 1 ? COLOR_WIN_BORDER : COLOR_TASKBAR),
+      COLOR_TEXT_WHITE);
+  gui_draw_button(
+      BTN_X(1), ty + BTN_Y_OFF, BTN_W, BTN_H, get_string(STR_CONSOLE_BTN),
+      term_window.visible ? COLOR_ACCENT
+                          : (tb_hover == 2 ? COLOR_WIN_BORDER : COLOR_TASKBAR),
+      COLOR_TEXT_WHITE);
 
   if (!system_booted_from_disk()) {
     gui_window_t *iw = installer_app_get_window();
-    gui_draw_button(194, ty + 6, 90, 28, "Install",
-                    iw->visible ? COLOR_WIN_TITLE : COLOR_TASKBAR,
+    gui_draw_button(BTN_X(2), ty + BTN_Y_OFF, BTN_W, BTN_H, "Install",
+                    iw->visible
+                        ? COLOR_ACCENT
+                        : (tb_hover == 3 ? COLOR_WIN_BORDER : COLOR_TASKBAR),
                     COLOR_TEXT_WHITE);
   }
 
   if (show_power_menu) {
-    int32_t menu_w = 120, menu_h = 60;
-    int32_t menu_x = 6, menu_y = ty - menu_h - 4;
-    fb_fill_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BG);
-    fb_draw_rect(menu_x, menu_y, menu_w, menu_h, COLOR_WIN_BORDER);
-    fb_fill_rect(menu_x + 2, menu_y + 2, menu_w - 4, 26, COLOR_WIN_BG);
-    fb_draw_string(menu_x + 10, menu_y + 8, get_string(STR_RESTART),
-                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
-    fb_fill_rect(menu_x + 2, menu_y + 30, menu_w - 4, 26, COLOR_WIN_BG);
-    fb_draw_string(menu_x + 10, menu_y + 36, get_string(STR_SHUTDOWN),
-                   COLOR_TEXT_WHITE, COLOR_WIN_BG);
+    int32_t menu_x = MENU_X, menu_y = ty - MENU_H - 4;
+    uint32_t bg1 = (tb_hover == 11) ? COLOR_ACCENT : COLOR_WIN_BG;
+    uint32_t bg2 = (tb_hover == 12) ? COLOR_PINK : COLOR_WIN_BG;
+    fb_draw_shadow(menu_x, menu_y, MENU_W, MENU_H, 12, 10, 4, 0x000000, 130);
+    fb_fill_rrect_border(menu_x, menu_y, MENU_W, MENU_H, 12, COLOR_WIN_BG,
+                         COLOR_WIN_BORDER);
+    fb_fill_rrect(menu_x + 4, menu_y + 4, MENU_W - 8, 24, 8, bg1);
+    fb_draw_string(menu_x + 14, menu_y + 8, get_string(STR_RESTART),
+                   COLOR_TEXT_WHITE, bg1);
+    fb_fill_rrect(menu_x + 4, menu_y + 32, MENU_W - 8, 24, 8, bg2);
+    fb_draw_string(menu_x + 14, menu_y + 36, get_string(STR_SHUTDOWN),
+                   COLOR_TEXT_WHITE, bg2);
   }
 
   /* Clock */
@@ -294,7 +332,8 @@ static void render_terminal_content(void) {
   if ((ticks / 500) % 2 == 0) {
     int32_t cur_px = cx + term_cx * FONT_WIDTH;
     int32_t cur_py = cy + term_cy * FONT_HEIGHT;
-    fb_fill_rect(cur_px, cur_py, FONT_WIDTH, FONT_HEIGHT, COLOR_TEXT_GREEN);
+    fb_fill_rrect(cur_px, cur_py + 1, FONT_WIDTH, FONT_HEIGHT - 2, 2,
+                  COLOR_TEXT_GREEN);
   }
 }
 
@@ -370,7 +409,7 @@ void desktop_init(void) {
   fb_init(vbe_get_framebuffer(), w, h, vbe_get_pitch());
   mouse_set_bounds((int32_t)w, (int32_t)h);
 
-  clock_x_pos = (int32_t)(fb_get_width()) - 8 * FONT_WIDTH - 12;
+  clock_x_pos = (int32_t)(fb_get_width()) - 8 * FONT_WIDTH - 40;
 
   int32_t win_w = 660, win_h = 480;
   int32_t win_x = ((int32_t)w - win_w) / 2;
@@ -410,8 +449,8 @@ void desktop_loop_iteration(void) {
     if (!(last_buttons & 0x01)) {
       int32_t ty = (int32_t)(h - TASKBAR_HEIGHT);
       if (show_power_menu) {
-        int32_t menu_w = 120, menu_h = 60;
-        int32_t menu_x = 6, menu_y = ty - menu_h - 4;
+        int32_t menu_w = MENU_W, menu_h = MENU_H;
+        int32_t menu_x = MENU_X, menu_y = ty - menu_h - 4;
         if (mx >= menu_x && mx <= menu_x + menu_w && my >= menu_y &&
             my <= menu_y + menu_h) {
           if (my < menu_y + 30) {
@@ -421,18 +460,20 @@ void desktop_loop_iteration(void) {
             outw(0xB004, 0x2000);
             __asm__ volatile("cli; hlt");
           }
-        } else if (!(my >= ty && mx >= 6 && mx <= 96)) {
+        } else if (!(my >= ty && mx >= BTN_X(0) && mx <= BTN_X(0) + BTN_W)) {
           show_power_menu = 0;
         }
       }
 
       if (my >= ty) {
-        if (mx >= 6 && mx <= 96 && my >= ty + 6 && my <= ty + 34)
+        if (mx >= BTN_X(0) && mx <= BTN_X(0) + BTN_W && my >= ty + 6 &&
+            my <= ty + 34)
           show_power_menu = !show_power_menu;
-        else if (mx >= 100 && mx <= 190 && my >= ty + 6 && my <= ty + 34)
+        else if (mx >= BTN_X(1) && mx <= BTN_X(1) + BTN_W && my >= ty + 6 &&
+                 my <= ty + 34)
           term_window.visible = !term_window.visible;
-        else if (mx >= 194 && mx <= 284 && my >= ty + 6 && my <= ty + 34 &&
-                 !system_booted_from_disk()) {
+        else if (mx >= BTN_X(2) && mx <= BTN_X(2) + BTN_W && my >= ty + 6 &&
+                 my <= ty + 34 && !system_booted_from_disk()) {
           gui_window_t *iw = installer_app_get_window();
           iw->visible = !iw->visible;
         }
@@ -442,38 +483,39 @@ void desktop_loop_iteration(void) {
         if (python_turtle_pointer_down(mx, my)) {
           /* consumed by turtle window manager */
         } else {
-        /* Try installer window click first */
-        gui_window_t *iw = installer_app_get_window();
-        if (iw->visible && !show_power_menu) {
-          if (installer_app_click(mx, my)) {
-            /* consumed by installer */
-          } else {
-            /* Check installer titlebar drag */
-            gui_rect_t itb = {iw->bounds.x, iw->bounds.y, iw->bounds.w,
-                              TITLEBAR_HEIGHT};
-            if (gui_point_in_rect(mx, my, &itb)) {
-              iw->dragging = 1;
-              iw->drag_offset_x = mx - iw->bounds.x;
-              iw->drag_offset_y = my - iw->bounds.y;
-            }
-          }
-        }
-        if (term_window.visible && !show_power_menu) {
-          gui_rect_t titlebar = {term_window.bounds.x, term_window.bounds.y,
-                                 term_window.bounds.w, TITLEBAR_HEIGHT};
-          if (gui_point_in_rect(mx, my, &titlebar)) {
-            int32_t close_x = term_window.bounds.x + term_window.bounds.w - 22;
-            int32_t close_y = term_window.bounds.y + 6;
-            gui_rect_t close_rect = {close_x, close_y, 16, 16};
-            if (gui_point_in_rect(mx, my, &close_rect)) {
-              term_window.visible = 0;
+          /* Try installer window click first */
+          gui_window_t *iw = installer_app_get_window();
+          if (iw->visible && !show_power_menu) {
+            if (installer_app_click(mx, my)) {
+              /* consumed by installer */
             } else {
-              term_window.dragging = 1;
-              term_window.drag_offset_x = mx - term_window.bounds.x;
-              term_window.drag_offset_y = my - term_window.bounds.y;
+              /* Check installer titlebar drag */
+              gui_rect_t itb = {iw->bounds.x, iw->bounds.y, iw->bounds.w,
+                                TITLEBAR_HEIGHT};
+              if (gui_point_in_rect(mx, my, &itb)) {
+                iw->dragging = 1;
+                iw->drag_offset_x = mx - iw->bounds.x;
+                iw->drag_offset_y = my - iw->bounds.y;
+              }
             }
           }
-        }
+          if (term_window.visible && !show_power_menu) {
+            gui_rect_t titlebar = {term_window.bounds.x, term_window.bounds.y,
+                                   term_window.bounds.w, TITLEBAR_HEIGHT};
+            if (gui_point_in_rect(mx, my, &titlebar)) {
+              int32_t close_x =
+                  term_window.bounds.x + term_window.bounds.w - 22;
+              int32_t close_y = term_window.bounds.y + 6;
+              gui_rect_t close_rect = {close_x, close_y, 16, 16};
+              if (gui_point_in_rect(mx, my, &close_rect)) {
+                term_window.visible = 0;
+              } else {
+                term_window.dragging = 1;
+                term_window.drag_offset_x = mx - term_window.bounds.x;
+                term_window.drag_offset_y = my - term_window.bounds.y;
+              }
+            }
+          }
         }
       }
     }
@@ -499,7 +541,9 @@ void desktop_loop_iteration(void) {
   int blink_state = (int)((ticks / 500) % 2);
 
   gui_window_t *iwv = installer_app_get_window();
-  int need_full = full_dirty || (term_window.visible != last_term_visible) ||
+  tb_hover = compute_hover(mx, my);
+  int need_full = full_dirty || (tb_hover != last_tb_hover) ||
+                  (term_window.visible != last_term_visible) ||
                   (term_window.visible && term_window.bounds.x != last_win_x) ||
                   (term_window.visible && term_window.bounds.y != last_win_y) ||
                   (iwv->visible != last_inst_visible) ||
@@ -527,6 +571,7 @@ void desktop_loop_iteration(void) {
     last_inst_x = iwv->bounds.x;
     last_inst_y = iwv->bounds.y;
     last_power_menu = show_power_menu;
+    last_tb_hover = tb_hover;
     last_blink_state = blink_state;
     last_clock_secs = timer_get_uptime_seconds();
     term_content_dirty = 0;
